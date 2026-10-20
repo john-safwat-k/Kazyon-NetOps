@@ -1,0 +1,108 @@
+# ==============================================================================
+# IT Network Support AI Agent — Multi-Environment Docker Compose (dev & prod)
+# ==============================================================================
+# Parameterized via ENV_SLUG (`dev` or `prod`) so both environments run side-by-side
+# on 10.100.109.9 with completely isolated containers, volumes, networks, and ports:
+#
+#   DEV  (--env dev) :
+#     Project    : it-net-support-dev
+#     Containers : it-net-agent-dev (:8085), it-net-postgres-dev (:5435), it-net-redis-dev (:6385)
+#     Volumes    : it-net-pgdata-dev, it-net-redisdata-dev
+#
+#   PROD (--env prod):
+#     Project    : it-net-support-prod
+#     Containers : it-net-agent-prod (:8084), it-net-postgres-prod (:5434), it-net-redis-prod (:6384)
+#     Volumes    : it-net-pgdata-prod, it-net-redisdata-prod
+# ==============================================================================
+
+name: "${COMPOSE_PROJECT_NAME:-it-net-support-${ENV_SLUG:-dev}}"
+
+services:
+  it-net-agent:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-python:3.12-slim-bookworm}"
+        CACHE_BUST: "${CACHE_BUST:-1}"
+    image: "${IMAGE_NAME:-it-net-support-agent-${ENV_SLUG:-dev}}:${IMAGE_TAG:-latest}"
+    container_name: "it-net-agent-${ENV_SLUG:-dev}"
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8085}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Live code & SPA mounts for rapid iteration and clean volume updates
+      - ./backend:/app/backend
+      - ./frontend/dist:/app/frontend/dist
+      # Persistent runtime storage (uploaded branch sheets, diagnostic logs)
+      - ./data:/app/data
+      # Optional TLS certs directory (read-only)
+      - ./certs:/app/certs:ro
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "python3", "/app/backend/scripts/healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  postgres:
+    image: "postgres:16"
+    container_name: "it-net-postgres-${ENV_SLUG:-dev}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-it_net_support_dev}"
+      POSTGRES_USER: "${POSTGRES_USER:-it_net_user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_BIND:-0.0.0.0}:${POSTGRES_PORT:-5435}:5432"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-it_net_user} -d ${POSTGRES_DB:-it_net_support_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: "redis:7"
+    container_name: "it-net-redis-${ENV_SLUG:-dev}"
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env before starting Redis}"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${REDIS_BIND:-0.0.0.0}:${REDIS_PORT:-6385}:6379"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  app_net:
+    name: "it-net-network-${ENV_SLUG:-dev}"
+    driver: bridge
+
+volumes:
+  pgdata:
+    name: "it-net-pgdata-${ENV_SLUG:-dev}"
+  redisdata:
+    name: "it-net-redisdata-${ENV_SLUG:-dev}"

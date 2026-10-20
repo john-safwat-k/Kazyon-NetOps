@@ -1,0 +1,56 @@
+# ---- Secrets & environment ----
+# Never commit real credentials (CLAUDE.md §2, §4). Keep *.example only.
+.env
+.env.*
+!.env.example
+!.env.dev.example
+!.env.prod.example
+*.pem
+*.key
+
+# ---- Python ----
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.eggs/
+build/
+*.so
+
+# ---- Node / frontend ----
+node_modules/
+npm_cache/
+dist/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+
+# ---- Databases & local runtime data ----
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.bak.*
+*.dump
+data/
+backend/data/
+backups/
+config-backups/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- Self-signed TLS material ----
+certs/

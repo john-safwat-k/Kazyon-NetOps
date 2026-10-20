@@ -1,0 +1,11 @@
+# Ruff configuration for the IT Network Support AI Agent & Ticketing Harness backend.
+# See CLAUDE.md §18.
+
+line-length = 100
+target-version = "py312"
+
+exclude = [
+    ".venv",
+    "__pycache__",
+    "backend/alembic/versions",
+]
