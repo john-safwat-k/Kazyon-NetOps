@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   AppShell,
   Badge,
@@ -8,6 +8,9 @@ import {
   KanbanBoard,
   useTheme,
 } from "./design-system";
+import { AuthProvider, getUserInitials, useAuth } from "./lib/auth";
+import { LoginView } from "./views/LoginView";
+import { UsersRbacView } from "./views/UsersRbacView";
 
 interface HealthPayload {
   status: string;
@@ -19,8 +22,22 @@ interface HealthPayload {
   vllm_model: string;
 }
 
-export default function App() {
+const NAV_REQUIRED_PERMISSIONS: Record<string, string> = {
+  Dashboard: "tickets:view",
+  "Kanban Board": "tickets:view",
+  "Tickets List": "tickets:view",
+  "Human Review": "tickets:view",
+  "Replication Monitor": "replication:view",
+  "Mailbox & Triage": "emails:view",
+  "Diagnostics Sandbox": "diagnostics:view_logs",
+  "Branches & ISPs": "branches:view",
+  "Users & Roles": "users:view",
+  "AI & SLA Settings": "settings:read",
+};
+
+function ConsoleRouter() {
   const { theme, toggleTheme } = useTheme();
+  const { user, isLoading, logout, hasPermission } = useAuth();
   const [activeNav, setActiveNav] = useState<string>("Dashboard");
   const [health, setHealth] = useState<HealthPayload | null>(null);
 
@@ -31,8 +48,56 @@ export default function App() {
       .catch(() => setHealth(null));
   }, []);
 
+  const canAccessNav = useCallback(
+    (label: string): boolean => {
+      const reqPerm = NAV_REQUIRED_PERMISSIONS[label];
+      if (!reqPerm) return true;
+      return hasPermission(reqPerm);
+    },
+    [hasPermission],
+  );
+
   const envLabel =
     health?.env_slug?.toUpperCase() === "DEV" ? "DEV :8085" : "PROD :8084";
+
+  if (isLoading) {
+    return (
+      <div
+        className="kz"
+        data-theme={theme}
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--surface-000)",
+          color: "var(--ink)",
+        }}
+      >
+        <span className="kz-live">Verifying Kazyon NetOps session…</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginView
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        envSlug={health?.env_slug || "dev"}
+        apiReachable={Boolean(health)}
+      />
+    );
+  }
+
+  const initials = getUserInitials(user.display_name, user.username);
+  const roleLabel = user.is_super_admin
+    ? "Super Admin"
+    : user.role_name === "support_engineer"
+      ? "HQ Network Engineer"
+      : user.role_name === "viewer"
+        ? "Viewer / Auditor"
+        : user.role_name;
 
   const healthServices: HealthServiceItem[] = [
     {
@@ -57,6 +122,18 @@ export default function App() {
     },
   ];
 
+  if (activeNav === "Users & Roles" && canAccessNav("Users & Roles")) {
+    return (
+      <UsersRbacView
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onNavigate={setActiveNav}
+        env={envLabel}
+        canAccessNav={canAccessNav}
+      />
+    );
+  }
+
   if (activeNav === "Dashboard") {
     return (
       <DashboardScreen
@@ -65,6 +142,11 @@ export default function App() {
         onNavigate={setActiveNav}
         env={envLabel}
         services={healthServices}
+        initials={initials}
+        userDisplayName={user.display_name}
+        userRoleLabel={roleLabel}
+        onLogout={logout}
+        canAccessNav={canAccessNav}
       />
     );
   }
@@ -76,6 +158,11 @@ export default function App() {
         onToggleTheme={toggleTheme}
         onNavigate={setActiveNav}
         env={envLabel}
+        initials={initials}
+        userDisplayName={user.display_name}
+        userRoleLabel={roleLabel}
+        onLogout={logout}
+        canAccessNav={canAccessNav}
       />
     );
   }
@@ -87,6 +174,11 @@ export default function App() {
       onToggleTheme={toggleTheme}
       onNavigate={setActiveNav}
       env={envLabel}
+      initials={initials}
+      userDisplayName={user.display_name}
+      userRoleLabel={roleLabel}
+      onLogout={logout}
+      canAccessNav={canAccessNav}
     >
       <div className="kz-page-hd">
         <div>
@@ -109,11 +201,20 @@ export default function App() {
       <div className="kz-card">
         <div className="kz-card-bd">
           <p className="kz-muted" style={{ margin: 0 }}>
-            Select <b>Dashboard</b> or <b>Kanban Board</b> in the sidebar to
-            inspect the live Kazyon NetOps reference screens.
+            Select <b>Dashboard</b>, <b>Kanban Board</b>, or{" "}
+            <b>Users &amp; Roles</b> in the sidebar to inspect the live Kazyon
+            NetOps screens.
           </p>
         </div>
       </div>
     </AppShell>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ConsoleRouter />
+    </AuthProvider>
   );
 }

@@ -12,15 +12,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-import app.auth.models  # noqa: F401
-import app.directory.models  # noqa: F401
-import app.ticketing.models  # noqa: F401
 from app.agent.vllm_client import aclose_vllm_client, check_vllm_health
+from app.auth import models as _auth_models  # noqa: F401
+from app.auth.router import auth_router, roles_router, users_router
 from app.auth.service import ensure_initial_admin
+from app.common import audit as _audit_models  # noqa: F401
 from app.common.config import get_settings
 from app.common.database import Base, SessionLocal, engine
 from app.common.exceptions import register_exception_handlers
 from app.common.logging import configure_logging
+from app.directory import models as _directory_models  # noqa: F401
+from app.ticketing import models as _ticketing_models  # noqa: F401
 
 configure_logging(level=get_settings().log_level)
 logger = logging.getLogger("it_net.main")
@@ -55,6 +57,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.app_env.lower() == "development" and "sqlite" in settings.sync_database_url:
         logger.info("Local SQLite dev bootstrap: creating any missing tables from models...")
         Base.metadata.create_all(bind=engine)
+        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy import text
+
+        inspector = sa_inspect(engine)
+        if "users" in inspector.get_table_names():
+            existing_cols = {c["name"] for c in inspector.get_columns("users")}
+            if "last_login_at" not in existing_cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP"))
     else:
         logger.info(
             "Schema owned by Alembic (env=%s); run 'alembic upgrade head' at deploy.",
@@ -101,6 +112,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(roles_router)
 
 
 @app.get("/api/health")

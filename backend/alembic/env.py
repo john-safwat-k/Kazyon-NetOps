@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import app.auth.models  # noqa: F401
+import app.common.audit  # noqa: F401
 import app.directory.models  # noqa: F401
 import app.ticketing.models  # noqa: F401
 from app.common.config import get_settings

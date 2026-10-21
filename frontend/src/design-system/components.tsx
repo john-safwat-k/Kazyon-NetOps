@@ -506,6 +506,10 @@ export interface AppShellProps {
   onToggleTheme?: () => void;
   env?: string;
   initials?: string;
+  userDisplayName?: string;
+  userRoleLabel?: string;
+  onLogout?: () => void;
+  canAccessNav?: (label: string) => boolean;
   children?: React.ReactNode;
   style?: React.CSSProperties;
 }
@@ -518,6 +522,10 @@ export function AppShell({
   onToggleTheme,
   env = "PROD :8084",
   initials = "JS",
+  userDisplayName,
+  userRoleLabel,
+  onLogout,
+  canAccessNav,
   children,
   style,
 }: AppShellProps) {
@@ -537,44 +545,50 @@ export function AppShell({
             <span>IT Network Support Agent</span>
           </div>
         </div>
-        {NAV_SECTIONS.map(([sectionTitle, items]) => (
-          <React.Fragment key={sectionTitle}>
-            <div className="kz-nav-sec">{sectionTitle}</div>
-            {items.map(([iconName, label, badgeCount]) => {
-              const href = hrefs?.[label];
-              const isActive = label === active;
-              return (
-                <a
-                  key={label}
-                  href={href || "#"}
-                  aria-current={isActive ? "page" : undefined}
-                  className={clsx("kz-nav", isActive && "kz-nav-on")}
-                  onClick={(e) => {
-                    if (onNavigate) {
-                      e.preventDefault();
-                      onNavigate(label);
-                    } else if (!href) {
-                      e.preventDefault();
-                    }
-                  }}
-                >
-                  <Icon name={iconName} />
-                  {label}
-                  {badgeCount ? (
-                    <span
-                      className={clsx(
-                        "kz-nav-count",
-                        iconName === "alert" && "kz-nav-count-alert",
-                      )}
-                    >
-                      {badgeCount}
-                    </span>
-                  ) : null}
-                </a>
-              );
-            })}
-          </React.Fragment>
-        ))}
+        {NAV_SECTIONS.map(([sectionTitle, items]) => {
+          const visibleItems = canAccessNav
+            ? items.filter(([, label]) => canAccessNav(label))
+            : items;
+          if (visibleItems.length === 0) return null;
+          return (
+            <React.Fragment key={sectionTitle}>
+              <div className="kz-nav-sec">{sectionTitle}</div>
+              {visibleItems.map(([iconName, label, badgeCount]) => {
+                const href = hrefs?.[label];
+                const isActive = label === active;
+                return (
+                  <a
+                    key={label}
+                    href={href || "#"}
+                    aria-current={isActive ? "page" : undefined}
+                    className={clsx("kz-nav", isActive && "kz-nav-on")}
+                    onClick={(e) => {
+                      if (onNavigate) {
+                        e.preventDefault();
+                        onNavigate(label);
+                      } else if (!href) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    <Icon name={iconName} />
+                    {label}
+                    {badgeCount ? (
+                      <span
+                        className={clsx(
+                          "kz-nav-count",
+                          iconName === "alert" && "kz-nav-count-alert",
+                        )}
+                      >
+                        {badgeCount}
+                      </span>
+                    ) : null}
+                  </a>
+                );
+              })}
+            </React.Fragment>
+          );
+        })}
       </aside>
       <div className="kz-main">
         <header className="kz-top">
@@ -597,7 +611,44 @@ export function AppShell({
             />
           ) : null}
           <Button variant="ghost" icon="bell" aria-label="Notifications" />
-          <span className="kz-avatar">{initials}</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span className="kz-avatar" title={userDisplayName || undefined}>
+              {initials}
+            </span>
+            {userDisplayName ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  lineHeight: "14px",
+                  fontSize: 12,
+                }}
+              >
+                <b style={{ fontWeight: 600 }}>{userDisplayName}</b>
+                {userRoleLabel ? (
+                  <span className="kz-muted" style={{ fontSize: 11 }}>
+                    {userRoleLabel}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {onLogout ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onLogout}
+                aria-label="Sign out"
+              >
+                Sign out
+              </Button>
+            ) : null}
+          </div>
         </header>
         <main className="kz-page">{children}</main>
       </div>
@@ -779,6 +830,11 @@ export interface DashboardScreenProps {
   onNavigate?: (label: string) => void;
   env?: string;
   services?: HealthServiceItem[];
+  initials?: string;
+  userDisplayName?: string;
+  userRoleLabel?: string;
+  onLogout?: () => void;
+  canAccessNav?: (label: string) => boolean;
 }
 
 export function DashboardScreen({
@@ -788,6 +844,11 @@ export function DashboardScreen({
   onNavigate,
   env,
   services,
+  initials,
+  userDisplayName,
+  userRoleLabel,
+  onLogout,
+  canAccessNav,
 }: DashboardScreenProps) {
   const [range, setRange] = useState<"24h" | "7d" | "30d">("7d");
   const watchlist = SAMPLE_TICKETS.filter((t) => t.sla).sort(
@@ -817,6 +878,11 @@ export function DashboardScreen({
       onToggleTheme={onToggleTheme}
       onNavigate={onNavigate}
       env={env}
+      initials={initials}
+      userDisplayName={userDisplayName}
+      userRoleLabel={userRoleLabel}
+      onLogout={onLogout}
+      canAccessNav={canAccessNav}
     >
       <div className="kz-page-hd">
         <div>
@@ -1060,6 +1126,11 @@ export interface KanbanBoardProps {
   onToggleTheme?: () => void;
   onNavigate?: (label: string) => void;
   env?: string;
+  initials?: string;
+  userDisplayName?: string;
+  userRoleLabel?: string;
+  onLogout?: () => void;
+  canAccessNav?: (label: string) => boolean;
 }
 
 export function KanbanBoard({
@@ -1068,6 +1139,11 @@ export function KanbanBoard({
   onToggleTheme,
   onNavigate,
   env,
+  initials,
+  userDisplayName,
+  userRoleLabel,
+  onLogout,
+  canAccessNav,
 }: KanbanBoardProps) {
   return (
     <AppShell
@@ -1077,6 +1153,11 @@ export function KanbanBoard({
       onToggleTheme={onToggleTheme}
       onNavigate={onNavigate}
       env={env}
+      initials={initials}
+      userDisplayName={userDisplayName}
+      userRoleLabel={userRoleLabel}
+      onLogout={onLogout}
+      canAccessNav={canAccessNav}
     >
       <div className="kz-page-hd">
         <div>

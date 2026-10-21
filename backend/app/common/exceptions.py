@@ -47,6 +47,20 @@ class InvalidStateTransitionError(SupportAgentError):
         super().__init__(message, status_code=400)
 
 
+class AuthenticationError(SupportAgentError):
+    """Raised when authentication credentials or JWT tokens are invalid or expired."""
+
+    def __init__(self, message: str = "Invalid or expired authentication credentials") -> None:
+        super().__init__(message, status_code=401)
+
+
+class ValidationError(SupportAgentError):
+    """Raised when a domain operation violates business validation constraints."""
+
+    def __init__(self, message: str, *, details: Optional[dict[str, Any]] = None) -> None:
+        super().__init__(message, status_code=400, details=details)
+
+
 class PermissionDeniedError(SupportAgentError):
     """Raised when a user lacks the required granular permission."""
 

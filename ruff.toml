@@ -9,3 +9,7 @@ exclude = [
     "__pycache__",
     "backend/alembic/versions",
 ]
+
+[lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
