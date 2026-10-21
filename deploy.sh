@@ -195,6 +195,7 @@ SSH_PORT="${DEPLOY_PORT_CONFIG:-22}"
 
 if [ "$TARGET_ENV" = "prod" ]; then
     ENV_SLUG="prod"
+    TARGET_ENV_UPPER="PROD"
     APP_ENV_VAL="production"
     COMPOSE_PROJECT="it-net-support-prod"
     IMAGE_NAME="it-net-support-agent-prod"
@@ -207,6 +208,7 @@ if [ "$TARGET_ENV" = "prod" ]; then
     ENV_TEMPLATE_FILE=".env.prod.example"
 else
     ENV_SLUG="dev"
+    TARGET_ENV_UPPER="DEV"
     APP_ENV_VAL="development"
     COMPOSE_PROJECT="it-net-support-dev"
     IMAGE_NAME="it-net-support-agent-dev"
@@ -237,7 +239,7 @@ run_remote() {
 }
 
 check_ssh_connection() {
-    log_info "Target Environment : ${CLR_BOLD}${TARGET_ENV^^}${CLR_RESET} (Project: ${CLR_CYAN}${COMPOSE_PROJECT}${CLR_RESET})"
+    log_info "Target Environment : ${CLR_BOLD}${TARGET_ENV_UPPER}${CLR_RESET} (Project: ${CLR_CYAN}${COMPOSE_PROJECT}${CLR_RESET})"
     log_info "Connecting to ${CLR_BOLD}${SERVER_USER}@${SERVER_HOST}:${SSH_PORT}${CLR_RESET}..."
 
     if [ -S "$SSH_SOCKET" ]; then
@@ -268,12 +270,16 @@ check_ssh_connection() {
 # ------------------------------------------------------------------------------
 sync_code() {
     if [ -d "$SCRIPT_DIR/frontend" ] && [ -f "$SCRIPT_DIR/frontend/package.json" ]; then
+        if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
+            log_info "Installing frontend dependencies locally..."
+            ( cd "$SCRIPT_DIR/frontend" && npm install )
+        fi
         log_info "Building fresh frontend assets locally before sync..."
         rm -rf "$SCRIPT_DIR/frontend/dist"
         ( cd "$SCRIPT_DIR/frontend" && npm run build )
     fi
 
-    log_info "Syncing source code to [${TARGET_ENV^^}] directory: ${CLR_CYAN}${REMOTE_DIR}${CLR_RESET}..."
+    log_info "Syncing source code to [${TARGET_ENV_UPPER}] directory: ${CLR_CYAN}${REMOTE_DIR}${CLR_RESET}..."
 
     run_remote "mkdir -p '${REMOTE_DIR}/data/imports' '${REMOTE_DIR}/data/logs' '${REMOTE_DIR}/certs' '${REMOTE_DIR}/backups'"
 
@@ -359,7 +365,7 @@ sync_code() {
 }
 
 remote_build_and_run() {
-    log_info "Deploying [${TARGET_ENV^^}] stack (${COMPOSE_PROJECT}) on ${SERVER_HOST}..."
+    log_info "Deploying [${TARGET_ENV_UPPER}] stack (${COMPOSE_PROJECT}) on ${SERVER_HOST}..."
     echo -e "${CLR_DIM}----------------------------------------------------------------------${CLR_RESET}"
 
     local START_TIME
@@ -382,7 +388,7 @@ remote_build_and_run() {
             export BASE_IMAGE='python:3.12-slim-bookworm'
         fi
 
-        echo '🧹 Stopping existing [${TARGET_ENV^^}] containers (volumes preserved)...'
+        echo '🧹 Stopping existing [${TARGET_ENV_UPPER}] containers (volumes preserved)...'
         docker compose -p '${COMPOSE_PROJECT}' down --remove-orphans
 
         find backend -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
@@ -391,7 +397,7 @@ remote_build_and_run() {
         if [ '${NO_BUILD}' = '1' ]; then
             echo '⚡ Skipping docker compose build (--no-build active)...'
         else
-            echo '⚙️ Building [${TARGET_ENV^^}] image (${IMAGE_NAME}:latest)...'
+            echo '⚙️ Building [${TARGET_ENV_UPPER}] image (${IMAGE_NAME}:latest)...'
             export CACHE_BUST=\$(date +%s)
             docker compose -p '${COMPOSE_PROJECT}' build
             if ! docker image inspect \"\${BASE_SNAPSHOT}\" >/dev/null 2>&1; then
@@ -402,7 +408,7 @@ remote_build_and_run() {
             fi
         fi
 
-        echo '🗄️ Starting [${TARGET_ENV^^}] Postgres (it-net-postgres-${ENV_SLUG}) and Redis (it-net-redis-${ENV_SLUG})...'
+        echo '🗄️ Starting [${TARGET_ENV_UPPER}] Postgres (it-net-postgres-${ENV_SLUG}) and Redis (it-net-redis-${ENV_SLUG})...'
         docker compose -p '${COMPOSE_PROJECT}' up -d postgres redis
         for i in \$(seq 1 30); do
             docker compose -p '${COMPOSE_PROJECT}' exec -T postgres pg_isready -q && break
@@ -412,7 +418,7 @@ remote_build_and_run() {
         echo '🧬 Applying database migrations (alembic upgrade head)...'
         docker compose -p '${COMPOSE_PROJECT}' run --rm --no-deps -T -w /app/backend it-net-agent alembic upgrade head
 
-        echo '🚀 Starting [${TARGET_ENV^^}] application container (it-net-agent-${ENV_SLUG}) on port ${APP_PORT}...'
+        echo '🚀 Starting [${TARGET_ENV_UPPER}] application container (it-net-agent-${ENV_SLUG}) on port ${APP_PORT}...'
         docker compose -p '${COMPOSE_PROJECT}' up -d --force-recreate --remove-orphans
 
         docker image prune -f >/dev/null || true
@@ -423,11 +429,11 @@ remote_build_and_run() {
     local DURATION=$((END_TIME - START_TIME))
 
     echo -e "${CLR_DIM}----------------------------------------------------------------------${CLR_RESET}"
-    log_success "[${TARGET_ENV^^}] stack deployed & launched in ${DURATION}s."
+    log_success "[${TARGET_ENV_UPPER}] stack deployed & launched in ${DURATION}s."
 }
 
 check_health() {
-    log_info "Checking [${TARGET_ENV^^}] container health on ${SERVER_HOST}:${APP_PORT} ..."
+    log_info "Checking [${TARGET_ENV_UPPER}] container health on ${SERVER_HOST}:${APP_PORT} ..."
     local MAX_RETRIES=15
     local COUNT=0
     local HEALTHY=0
@@ -456,7 +462,7 @@ check_health() {
     echo ""
 
     if [ $HEALTHY -eq 1 ]; then
-        log_success "IT Network Support Agent [${TARGET_ENV^^}] is healthy and responding over ${APP_SCHEME} (HTTP 200)!"
+        log_success "IT Network Support Agent [${TARGET_ENV_UPPER}] is healthy and responding over ${APP_SCHEME} (HTTP 200)!"
     else
         log_warn "Health endpoint did not return HTTP 200 within 30s. Checking logs..."
         run_remote "cd '${REMOTE_DIR}' && docker compose -p '${COMPOSE_PROJECT}' logs --tail=30"
@@ -464,25 +470,25 @@ check_health() {
 }
 
 show_status() {
-    log_info "Fetching [${TARGET_ENV^^}] container status (${COMPOSE_PROJECT}) from ${SERVER_HOST}..."
+    log_info "Fetching [${TARGET_ENV_UPPER}] container status (${COMPOSE_PROJECT}) from ${SERVER_HOST}..."
     run_remote "cd '${REMOTE_DIR}' && docker compose -p '${COMPOSE_PROJECT}' ps"
 }
 
 tail_logs() {
-    log_info "Streaming [${TARGET_ENV^^}] logs (${COMPOSE_PROJECT}) from ${SERVER_HOST}..."
+    log_info "Streaming [${TARGET_ENV_UPPER}] logs (${COMPOSE_PROJECT}) from ${SERVER_HOST}..."
     run_remote "cd '${REMOTE_DIR}' && docker compose -p '${COMPOSE_PROJECT}' logs -f --tail=100"
 }
 
 restart_container() {
-    log_info "Restarting [${TARGET_ENV^^}] containers (${COMPOSE_PROJECT}) on ${SERVER_HOST}..."
+    log_info "Restarting [${TARGET_ENV_UPPER}] containers (${COMPOSE_PROJECT}) on ${SERVER_HOST}..."
     run_remote "cd '${REMOTE_DIR}' && docker compose -p '${COMPOSE_PROJECT}' restart"
-    log_success "[${TARGET_ENV^^}] containers restarted."
+    log_success "[${TARGET_ENV_UPPER}] containers restarted."
 }
 
 stop_container() {
-    log_info "Stopping [${TARGET_ENV^^}] containers (${COMPOSE_PROJECT}) on ${SERVER_HOST}..."
+    log_info "Stopping [${TARGET_ENV_UPPER}] containers (${COMPOSE_PROJECT}) on ${SERVER_HOST}..."
     run_remote "cd '${REMOTE_DIR}' && docker compose -p '${COMPOSE_PROJECT}' down"
-    log_success "[${TARGET_ENV^^}] containers stopped."
+    log_success "[${TARGET_ENV_UPPER}] containers stopped."
 }
 
 # ------------------------------------------------------------------------------
@@ -523,7 +529,7 @@ case "$MODE" in
         check_health
         echo ""
         echo -e "${CLR_GREEN}${CLR_BOLD}======================================================================"
-        echo "  🎉 Deployment Complete! [${TARGET_ENV^^} ENVIRONMENT]"
+        echo "  🎉 Deployment Complete! [${TARGET_ENV_UPPER} ENVIRONMENT]"
         echo "  • Server:            ${SERVER_HOST}"
         echo "  • Compose Project:   ${COMPOSE_PROJECT}"
         echo "  • App Container:     it-net-agent-${ENV_SLUG}"

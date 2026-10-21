@@ -362,6 +362,7 @@ Deterministic Workflow Engine (ticketing/state_machine.py + agent/workflow.py)
 
 Before implementing any new requirement:
 
+0. Read `plans/00-master-brd-and-roadmap.md` for the unified Master Business Requirements Document (BRD v5.0) and the 6-Phase Implementation Roadmap.
 1. Read `docs/01-project-overview.md` for the architecture and environment baseline.
 2. Read `docs/02-database-schema.md` if the task touches SQLAlchemy models or Alembic migrations.
 3. Read `docs/03-api-reference.md` if the task adds or modifies REST endpoints or WebSockets.

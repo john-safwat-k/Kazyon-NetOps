@@ -1,0 +1,73 @@
+/* Kazyon NetOps — tokens.css, compiled from tokens.json */
+:root, [data-theme="light"] {
+  --brand-500: #f47a20;
+  --brand-600: #c2410c;
+  --brand-700: #a63f0a;
+  --brand-text: #b8480c;
+  --brand-100: #fff1e6;
+  --brand-50: #fff8f2;
+  --on-brand: #ffffff;
+  --surface-000: #ffffff;
+  --surface-100: #fbf8f5;
+  --surface-200: #f4eee8;
+  --ink: #1f1a17;
+  --ink-muted: #6b625b;
+  --border: #ede5de;
+  --border-strong: #a39588;
+  --focus: #c2410c;
+  --good: #15803d;
+  --good-bg: #ecfdf3;
+  --warning: #a16207;
+  --warning-bg: #fefce8;
+  --critical: #b91c1c;
+  --critical-bg: #fef2f2;
+  --info: #1d4ed8;
+  --info-bg: #eff6ff;
+  --term-bg: #1f1a17;
+  --term-ink: #f5efea;
+  --shadow-card: 0 1px 2px rgba(31,26,23,0.06);
+  --shadow-raised: 0 8px 24px rgba(31,26,23,0.12);
+}
+[data-theme="dark"] {
+  --brand-500: #ff8a3d;
+  --brand-600: #ff8a3d;
+  --brand-700: #ffb07a;
+  --brand-text: #ff9a52;
+  --brand-100: #3a2414;
+  --brand-50: #241a13;
+  --on-brand: #17120e;
+  --surface-000: #17120e;
+  --surface-100: #211a15;
+  --surface-200: #2b221c;
+  --ink: #f5efea;
+  --ink-muted: #a8a29e;
+  --border: #3a302a;
+  --border-strong: #7a6b60;
+  --focus: #ff9a52;
+  --good: #4ade80;
+  --good-bg: #13291b;
+  --warning: #facc15;
+  --warning-bg: #2b2410;
+  --critical: #f87171;
+  --critical-bg: #2e1515;
+  --info: #93c5fd;
+  --info-bg: #14203a;
+  --term-bg: #0d0a08;
+  --term-ink: #f5efea;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-raised: 0 8px 24px rgba(0,0,0,0.5);
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

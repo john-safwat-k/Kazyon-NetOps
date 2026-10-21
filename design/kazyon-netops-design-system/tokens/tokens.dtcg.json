@@ -1,0 +1,439 @@
+{
+  "color": {
+    "light": {
+      "brand-500": {
+        "$type": "color",
+        "$value": "#f47a20",
+        "$description": "Kazyon orange. Identity fills only: active nav marker, chart bars, progress fills, logo tile. Never text on white (2.7:1)."
+      },
+      "brand-600": {
+        "$type": "color",
+        "$value": "#c2410c",
+        "$description": "Primary button and selected-tab background. Pairs with on-brand text (5.2:1 light, 7.9:1 dark)."
+      },
+      "brand-700": {
+        "$type": "color",
+        "$value": "#a63f0a",
+        "$description": "Primary button hover / pressed."
+      },
+      "brand-text": {
+        "$type": "color",
+        "$value": "#b8480c",
+        "$description": "Orange text: links, active nav label, KPI accents. 5.3:1 on surface-000."
+      },
+      "brand-100": {
+        "$type": "color",
+        "$value": "#fff1e6",
+        "$description": "Orange tint: active nav row, selected rows, brand badge ground."
+      },
+      "brand-50": {
+        "$type": "color",
+        "$value": "#fff8f2",
+        "$description": "Faint orange wash behind the topbar environment badge and empty states."
+      },
+      "on-brand": {
+        "$type": "color",
+        "$value": "#ffffff",
+        "$description": "Text and icons on brand-600."
+      },
+      "surface-000": {
+        "$type": "color",
+        "$value": "#ffffff",
+        "$description": "Page and card background. White is the dominant surface of the console."
+      },
+      "surface-100": {
+        "$type": "color",
+        "$value": "#fbf8f5",
+        "$description": "Sidebar, table headers, Kanban column ground."
+      },
+      "surface-200": {
+        "$type": "color",
+        "$value": "#f4eee8",
+        "$description": "Hover rows, input wells, chart track."
+      },
+      "ink": {
+        "$type": "color",
+        "$value": "#1f1a17",
+        "$description": "Primary text on any surface (17:1 light)."
+      },
+      "ink-muted": {
+        "$type": "color",
+        "$value": "#6b625b",
+        "$description": "Secondary text, axis labels, metadata. 6:1 on surface-000, 5.6:1 on surface-100."
+      },
+      "border": {
+        "$type": "color",
+        "$value": "#ede5de",
+        "$description": "Card outlines, dividers, table rules."
+      },
+      "border-strong": {
+        "$type": "color",
+        "$value": "#a39588",
+        "$description": "Input and secondary-button borders (3:1 control contrast)."
+      },
+      "focus": {
+        "$type": "color",
+        "$value": "#c2410c",
+        "$description": "2px focus ring on every interactive element."
+      },
+      "good": {
+        "$type": "color",
+        "$value": "#15803d",
+        "$description": "Status: link UP, ping PASS, Resolved. Always with a dot or icon and a label."
+      },
+      "good-bg": {
+        "$type": "color",
+        "$value": "#ecfdf3",
+        "$description": "Ground behind good status pills."
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "#a16207",
+        "$description": "Status: SLA at risk (under 25% left), degraded. Yellow-amber, kept apart from brand orange by lightness; never without a label."
+      },
+      "warning-bg": {
+        "$type": "color",
+        "$value": "#fefce8",
+        "$description": "Ground behind warning pills."
+      },
+      "critical": {
+        "$type": "color",
+        "$value": "#b91c1c",
+        "$description": "Status: link DOWN, SLA overdue, Needs Human Review."
+      },
+      "critical-bg": {
+        "$type": "color",
+        "$value": "#fef2f2",
+        "$description": "Ground behind critical pills and overdue KPI cards."
+      },
+      "info": {
+        "$type": "color",
+        "$value": "#1d4ed8",
+        "$description": "Status: AI action in progress, 4G backup detected, informational events."
+      },
+      "info-bg": {
+        "$type": "color",
+        "$value": "#eff6ff",
+        "$description": "Ground behind info pills."
+      },
+      "term-bg": {
+        "$type": "color",
+        "$value": "#1f1a17",
+        "$description": "Raw ping / traceroute log and JSON blocks. Dark in both themes; in dark it sits a step below surface-000 with a border."
+      },
+      "term-ink": {
+        "$type": "color",
+        "$value": "#f5efea",
+        "$description": "Text on term-bg (16:1)."
+      }
+    },
+    "dark": {
+      "brand-500": {
+        "$type": "color",
+        "$value": "#ff8a3d",
+        "$description": "Kazyon orange. Identity fills only: active nav marker, chart bars, progress fills, logo tile. Never text on white (2.7:1)."
+      },
+      "brand-600": {
+        "$type": "color",
+        "$value": "#ff8a3d",
+        "$description": "Primary button and selected-tab background. Pairs with on-brand text (5.2:1 light, 7.9:1 dark)."
+      },
+      "brand-700": {
+        "$type": "color",
+        "$value": "#ffb07a",
+        "$description": "Primary button hover / pressed."
+      },
+      "brand-text": {
+        "$type": "color",
+        "$value": "#ff9a52",
+        "$description": "Orange text: links, active nav label, KPI accents. 5.3:1 on surface-000."
+      },
+      "brand-100": {
+        "$type": "color",
+        "$value": "#3a2414",
+        "$description": "Orange tint: active nav row, selected rows, brand badge ground."
+      },
+      "brand-50": {
+        "$type": "color",
+        "$value": "#241a13",
+        "$description": "Faint orange wash behind the topbar environment badge and empty states."
+      },
+      "on-brand": {
+        "$type": "color",
+        "$value": "#17120e",
+        "$description": "Text and icons on brand-600."
+      },
+      "surface-000": {
+        "$type": "color",
+        "$value": "#17120e",
+        "$description": "Page and card background. White is the dominant surface of the console."
+      },
+      "surface-100": {
+        "$type": "color",
+        "$value": "#211a15",
+        "$description": "Sidebar, table headers, Kanban column ground."
+      },
+      "surface-200": {
+        "$type": "color",
+        "$value": "#2b221c",
+        "$description": "Hover rows, input wells, chart track."
+      },
+      "ink": {
+        "$type": "color",
+        "$value": "#f5efea",
+        "$description": "Primary text on any surface (17:1 light)."
+      },
+      "ink-muted": {
+        "$type": "color",
+        "$value": "#a8a29e",
+        "$description": "Secondary text, axis labels, metadata. 6:1 on surface-000, 5.6:1 on surface-100."
+      },
+      "border": {
+        "$type": "color",
+        "$value": "#3a302a",
+        "$description": "Card outlines, dividers, table rules."
+      },
+      "border-strong": {
+        "$type": "color",
+        "$value": "#7a6b60",
+        "$description": "Input and secondary-button borders (3:1 control contrast)."
+      },
+      "focus": {
+        "$type": "color",
+        "$value": "#ff9a52",
+        "$description": "2px focus ring on every interactive element."
+      },
+      "good": {
+        "$type": "color",
+        "$value": "#4ade80",
+        "$description": "Status: link UP, ping PASS, Resolved. Always with a dot or icon and a label."
+      },
+      "good-bg": {
+        "$type": "color",
+        "$value": "#13291b",
+        "$description": "Ground behind good status pills."
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "#facc15",
+        "$description": "Status: SLA at risk (under 25% left), degraded. Yellow-amber, kept apart from brand orange by lightness; never without a label."
+      },
+      "warning-bg": {
+        "$type": "color",
+        "$value": "#2b2410",
+        "$description": "Ground behind warning pills."
+      },
+      "critical": {
+        "$type": "color",
+        "$value": "#f87171",
+        "$description": "Status: link DOWN, SLA overdue, Needs Human Review."
+      },
+      "critical-bg": {
+        "$type": "color",
+        "$value": "#2e1515",
+        "$description": "Ground behind critical pills and overdue KPI cards."
+      },
+      "info": {
+        "$type": "color",
+        "$value": "#93c5fd",
+        "$description": "Status: AI action in progress, 4G backup detected, informational events."
+      },
+      "info-bg": {
+        "$type": "color",
+        "$value": "#14203a",
+        "$description": "Ground behind info pills."
+      },
+      "term-bg": {
+        "$type": "color",
+        "$value": "#0d0a08",
+        "$description": "Raw ping / traceroute log and JSON blocks. Dark in both themes; in dark it sits a step below surface-000 with a border."
+      },
+      "term-ink": {
+        "$type": "color",
+        "$value": "#f5efea",
+        "$description": "Text on term-bg (16:1)."
+      }
+    }
+  },
+  "spacing": {
+    "space-1": {
+      "$type": "dimension",
+      "$value": "4px",
+      "$description": "Icon-to-label gap, pill padding."
+    },
+    "space-2": {
+      "$type": "dimension",
+      "$value": "8px",
+      "$description": "Inside badges and compact rows."
+    },
+    "space-3": {
+      "$type": "dimension",
+      "$value": "12px",
+      "$description": "Ticket card padding, list row padding."
+    },
+    "space-4": {
+      "$type": "dimension",
+      "$value": "16px",
+      "$description": "Card padding, grid gutter."
+    },
+    "space-6": {
+      "$type": "dimension",
+      "$value": "24px",
+      "$description": "Page padding, gap between dashboard sections."
+    },
+    "space-8": {
+      "$type": "dimension",
+      "$value": "32px",
+      "$description": "Large section spacing, login form."
+    }
+  },
+  "radius": {
+    "radius-sm": {
+      "$type": "dimension",
+      "$value": "6px",
+      "$description": "Badges, inputs, small buttons."
+    },
+    "radius-md": {
+      "$type": "dimension",
+      "$value": "10px",
+      "$description": "Buttons, ticket cards, nav rows."
+    },
+    "radius-lg": {
+      "$type": "dimension",
+      "$value": "14px",
+      "$description": "Dashboard cards, panels, drawers."
+    },
+    "radius-pill": {
+      "$type": "dimension",
+      "$value": "999px",
+      "$description": "Status pills, SLA timers, avatars."
+    }
+  },
+  "shadow": {
+    "light": {
+      "shadow-card": {
+        "$type": "shadow",
+        "$value": "0 1px 2px rgba(31,26,23,0.06)"
+      },
+      "shadow-raised": {
+        "$type": "shadow",
+        "$value": "0 8px 24px rgba(31,26,23,0.12)"
+      }
+    },
+    "dark": {
+      "shadow-card": {
+        "$type": "shadow",
+        "$value": "0 1px 2px rgba(0,0,0,0.4)"
+      },
+      "shadow-raised": {
+        "$type": "shadow",
+        "$value": "0 8px 24px rgba(0,0,0,0.5)"
+      }
+    }
+  },
+  "font": {
+    "sans": {
+      "$type": "fontFamily",
+      "$value": "\"Hanken Grotesk\", system-ui, -apple-system, \"Segoe UI\", sans-serif"
+    },
+    "mono": {
+      "$type": "fontFamily",
+      "$value": "ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+    }
+  },
+  "typography": {
+    "display": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "40px",
+        "lineHeight": "44px",
+        "fontWeight": 700,
+        "letterSpacing": "-0.02em"
+      },
+      "$description": "Login hero and empty-state headlines."
+    },
+    "kpi": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "32px",
+        "lineHeight": "36px",
+        "fontWeight": 700,
+        "letterSpacing": "-0.01em"
+      },
+      "$description": "KPI card numbers. Tabular figures."
+    },
+    "h1": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "24px",
+        "lineHeight": "32px",
+        "fontWeight": 700
+      },
+      "$description": "Page title, one per page."
+    },
+    "h2": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "18px",
+        "lineHeight": "26px",
+        "fontWeight": 600
+      },
+      "$description": "Card and panel titles."
+    },
+    "h3": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "15px",
+        "lineHeight": "22px",
+        "fontWeight": 600
+      },
+      "$description": "Ticket card titles, drawer section heads."
+    },
+    "body": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "14px",
+        "lineHeight": "20px",
+        "fontWeight": 400
+      },
+      "$description": "Default UI text."
+    },
+    "small": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "12px",
+        "lineHeight": "16px",
+        "fontWeight": 500
+      },
+      "$description": "Metadata, table secondary lines, axis labels."
+    },
+    "label": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": "11px",
+        "lineHeight": "16px",
+        "fontWeight": 700,
+        "letterSpacing": "0.06em"
+      },
+      "$description": "Uppercase eyebrow labels on KPI cards and column headers."
+    },
+    "mono": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.mono}",
+        "fontSize": "12px",
+        "lineHeight": "18px",
+        "fontWeight": 500
+      },
+      "$description": "IPs, circuit IDs, ISP case numbers, raw ping/traceroute logs."
+    }
+  }
+}

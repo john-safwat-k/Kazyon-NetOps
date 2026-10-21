@@ -1,0 +1,41 @@
+/** Kazyon NetOps — Tailwind CSS preset (v3).
+ * Load tokens/tokens.css first; colors are CSS variables so light/dark switch with [data-theme]. */
+module.exports = {
+  darkMode: ['class', '[data-theme="dark"]'],
+  theme: {
+    extend: {
+      colors: {
+        "brand-500": "var(--brand-500)",
+        "brand-600": "var(--brand-600)",
+        "brand-700": "var(--brand-700)",
+        "brand-text": "var(--brand-text)",
+        "brand-100": "var(--brand-100)",
+        "brand-50": "var(--brand-50)",
+        "on-brand": "var(--on-brand)",
+        "surface-000": "var(--surface-000)",
+        "surface-100": "var(--surface-100)",
+        "surface-200": "var(--surface-200)",
+        "ink": "var(--ink)",
+        "ink-muted": "var(--ink-muted)",
+        "border": "var(--border)",
+        "border-strong": "var(--border-strong)",
+        "focus": "var(--focus)",
+        "good": "var(--good)",
+        "good-bg": "var(--good-bg)",
+        "warning": "var(--warning)",
+        "warning-bg": "var(--warning-bg)",
+        "critical": "var(--critical)",
+        "critical-bg": "var(--critical-bg)",
+        "info": "var(--info)",
+        "info-bg": "var(--info-bg)",
+        "term-bg": "var(--term-bg)",
+        "term-ink": "var(--term-ink)"
+},
+      fontFamily: { sans: ['"Hanken Grotesk"', 'system-ui', 'sans-serif'], mono: ['ui-monospace', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'] },
+      spacing: {"1": "4px", "2": "8px", "3": "12px", "4": "16px", "6": "24px", "8": "32px"},
+      borderRadius: {"sm": "6px", "md": "10px", "lg": "14px", "pill": "999px"},
+      boxShadow: { card: 'var(--shadow-card)', raised: 'var(--shadow-raised)' },
+      fontSize: {"display": ["40px", {"lineHeight": "44px", "fontWeight": "700", "letterSpacing": "-0.02em"}], "kpi": ["32px", {"lineHeight": "36px", "fontWeight": "700", "letterSpacing": "-0.01em"}], "h1": ["24px", {"lineHeight": "32px", "fontWeight": "700"}], "h2": ["18px", {"lineHeight": "26px", "fontWeight": "600"}], "h3": ["15px", {"lineHeight": "22px", "fontWeight": "600"}], "body": ["14px", {"lineHeight": "20px", "fontWeight": "400"}], "small": ["12px", {"lineHeight": "16px", "fontWeight": "500"}], "label": ["11px", {"lineHeight": "16px", "fontWeight": "700", "letterSpacing": "0.06em"}], "mono": ["12px", {"lineHeight": "18px", "fontWeight": "500"}]}
+    }
+  }
+};
