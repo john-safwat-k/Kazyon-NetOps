@@ -862,7 +862,7 @@ export function DashboardScreen({
       state: "ok",
     },
     {
-      name: "IMAP / SMTP Mailbox",
+      name: "SMTP Mailbox (noc@kazyon.com)",
       detail: "Last poll 14 s ago",
       state: "ok",
     },

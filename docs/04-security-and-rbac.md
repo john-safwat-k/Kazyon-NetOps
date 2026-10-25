@@ -25,11 +25,11 @@ Both domain-specific permissions and standardized 8-resource $\times$ 5-action (
 - A signed-in administrator cannot suspend their own account (`ValidationError` `400`).
 - The last active Super Admin cannot be suspended or demoted (`ValidationError` `400`).
 - System roles (`super_admin`, `support_engineer`, `viewer`) cannot be deleted, and `super_admin` permissions cannot be restricted.
-- **Page 12 connection tests & encrypted credentials:** `POST /api/v1/settings/test-smtp`, `POST /api/v1/settings/test-imap`, and `POST /api/v1/settings/test-vllm` require `settings:read`; `POST /api/v1/settings/send-test-email` requires `settings:update`.
-  - IMAP and SMTP App Passwords saved via Page 12 (`imap_password`, `smtp_password`) are encrypted at rest in `system_settings` (`imap_password_encrypted`, `smtp_password_encrypted`) using symmetric Fernet encryption derived from `ENCRYPTION_KEY` (`app/common/crypto.py`).
-  - Passwords and ciphertext are never returned by `GET /api/v1/settings` or `PUT /api/v1/settings`; only `imap_credentials_configured` and `smtp_credentials_configured` booleans are exposed.
+- **Page 12 connection tests & encrypted credentials:** `POST /api/v1/settings/test-smtp` and `POST /api/v1/settings/test-vllm` require `settings:read`; `POST /api/v1/settings/send-test-email` requires `settings:update`.
+  - SMTP credentials saved via Page 12 (`smtp_password`) are encrypted at rest in `system_settings` (`smtp_password_encrypted`) using symmetric Fernet encryption derived from `ENCRYPTION_KEY` (`app/common/crypto.py`).
+  - Passwords and ciphertext are never returned by `GET /api/v1/settings` or `PUT /api/v1/settings`; only the `smtp_credentials_configured` boolean is exposed.
   - Test results and audit logs never echo passwords.
-  - When `test_redirect_email` is configured on Page 12, live SMTP delivery routes all outbound Branch, ISP, and Human Escalation emails exclusively to `test_redirect_email` so real ISP NOCs are never emailed during Gmail testing.
+  - When `test_redirect_email` is configured on Page 12, live SMTP delivery routes all outbound Branch, ISP, and Human Escalation emails exclusively to `test_redirect_email` so real ISP NOCs are never emailed during sandbox testing.
   - The unauthenticated `GET /api/v1/system/vllm-status` endpoint was removed.
 - **Inbound SMTP listener:** an unauthenticated port that can create tickets and trigger ISP escalations, so it is locked down:
   - It is off by default.

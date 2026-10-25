@@ -44,9 +44,7 @@ def resolve_branch_regional_it_cc(
     if branch is not None:
         reg_mail = (branch.regional_it_email or "").strip()
         if not reg_mail:
-            reg_mail = REGIONAL_IT_DEFAULTS.get(
-                branch.region or "Cairo", "CITSupport@kazyon.com"
-            )
+            reg_mail = REGIONAL_IT_DEFAULTS.get(branch.region or "Cairo", "CITSupport@kazyon.com")
         return [reg_mail] if reg_mail else ["CITSupport@kazyon.com"]
     return ["CITSupport@kazyon.com"]
 
@@ -180,8 +178,7 @@ def smtp_transport_config_from_row(row: Optional[SystemSettings]) -> SmtpTranspo
         port=row.smtp_port if row is not None else 587,
         security=cast(SmtpSecurity, security),
         enabled=bool(row.smtp_enabled) if row is not None else False,
-        from_address=(row.mailbox_account if row is not None else "")
-        or "itsupport-agent@kazyon.com",
+        from_address=(row.mailbox_account if row is not None else "") or "noc@kazyon.com",
         username=row_user or settings.smtp_username,
         password=row_pass or settings.smtp_password,
         test_redirect_email=row_redirect,

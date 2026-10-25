@@ -290,6 +290,8 @@ def configure_test_environment(
     monkeypatch.setenv("DIAGNOSTIC_MODE", "simulated")
     monkeypatch.setenv("LOOP_GUARD_FAIL_OPEN_FOR_TESTS", "true")
     monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    monkeypatch.setenv("SMTP_USERNAME", "")
+    monkeypatch.setenv("SMTP_PASSWORD", "")
     get_settings.cache_clear()
     set_vllm_override(default_fake_vllm_responder)
     try:

@@ -24,13 +24,9 @@ Both `dev` and `prod` environments run side-by-side on `10.100.109.9` using isol
 
 The retry queue lives under the `./data:/app/data` bind mount, so emails waiting for vLLM survive a container restart or redeploy.
 
-**Inbound IMAP & Outbound SMTP (Gmail Testing or Kazyon Exchange) are configured on Page 12.**
-- You can switch between **Gmail Testing (`imap.gmail.com:993` SSL + `smtp.gmail.com:587` STARTTLS)** and **Kazyon Exchange (`mail.kazyon.com`)** directly on Page 12 (**AI & SLA Settings**) using the **Mail Provider Quick Presets** bar.
-- To test with **Gmail**:
-  1. Generate a 16-character **Google App Password** in your Google Account (`Security → 2-Step Verification → App passwords`).
-  2. On Page 12, click **Use Gmail for Testing (`imap.gmail.com`)**.
-  3. Enter your Gmail address in **IMAP Username** and your 16-character App Password in **IMAP Password**, then click **Copy Gmail login to Outbound SMTP →** (which also sets **Safe Test Redirect Email** to your Gmail address so real ISPs are never emailed).
-  4. Click **Save all changes**, then verify connectivity with **Test IMAP connection**, **Test SMTP connection**, and **Send live test email to Inbox**.
+**Outbound SMTP is configured on Page 12 (`noc@kazyon.com` on `mail.kazyon.com:587` STARTTLS).**
+- The application uses **SMTP only** (no IMAP). Outbound mail is sent through `mail.kazyon.com` on port `587` (`starttls`) using the service account `noc@kazyon.com`.
+- On Page 12 (**AI & SLA Settings → Outbound SMTP Relay**), you can verify connectivity with **Test SMTP connection** and **Send live test email**.
 - Migration `0005_gmail_and_redirect` runs automatically in `deploy.sh` (`alembic upgrade head`).
 
 **Receiving branch / ISP mail (inbound SMTP listener).** The company mail server forwards mail for the agent's address to the agent over SMTP.

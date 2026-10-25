@@ -640,7 +640,7 @@ def build_synthetic_eml_bytes(
     msg["Message-ID"] = mid
     msg["Date"] = email.utils.format_datetime(datetime.now(timezone.utc))
     msg["From"] = sender
-    msg["To"] = ", ".join(recipients or ["itsupport-agent@kazyon.com"])
+    msg["To"] = ", ".join(recipients or ["noc@kazyon.com"])
     if cc:
         msg["Cc"] = ", ".join(cc)
     msg["Subject"] = subject

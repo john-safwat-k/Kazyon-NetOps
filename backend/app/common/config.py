@@ -63,18 +63,11 @@ class Settings(BaseSettings):
     llm_retry_queue_dir: str = "./data/imports/llm_retry"
     llm_retry_backoff_sec: int = 300
 
-    # Inbound / Outbound Email Engine (Branch & ISP Communication)
-    imap_host: str = ""
-    imap_port: int = 993
-    imap_username: str = ""
-    imap_password: str = ""
-    imap_use_ssl: bool = True
-    imap_folder: str = "INBOX"
-    imap_poll_interval_sec: int = 60
+    # Outbound / Inbound SMTP Email Engine (Branch & ISP Communication)
     attachments_dir: str = "./data/attachments"
 
     # SMTP host, port, security mode, sender address and the on/off switch live in
-    # `system_settings` (Page 12). Only the optional login stays in the environment.
+    # `system_settings` (Page 12), with fallback to `SMTP_USERNAME` / `SMTP_PASSWORD` in `.env`.
     smtp_username: str = ""
     smtp_password: str = ""
 

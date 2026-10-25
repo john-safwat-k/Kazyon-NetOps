@@ -208,10 +208,10 @@ class SystemSettings(Base):
     )
     global_ai_kill_switch: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mailbox_account: Mapped[str] = mapped_column(
-        String(255), default="itsupport-agent@kazyon.com", nullable=False
+        String(255), default="noc@kazyon.com", nullable=False
     )
     imap_host: Mapped[str] = mapped_column(
-        String(255), default="outlook.office365.com", nullable=False
+        String(255), default="", server_default="", nullable=False
     )
     imap_port: Mapped[int] = mapped_column(Integer, default=993, nullable=False)
     imap_use_ssl: Mapped[bool] = mapped_column(
@@ -226,9 +226,7 @@ class SystemSettings(Base):
     imap_password_encrypted: Mapped[str] = mapped_column(
         Text, default="", server_default="", nullable=False
     )
-    smtp_host: Mapped[str] = mapped_column(
-        String(255), default="smtp.office365.com", nullable=False
-    )
+    smtp_host: Mapped[str] = mapped_column(String(255), default="mail.kazyon.com", nullable=False)
     smtp_port: Mapped[int] = mapped_column(Integer, default=587, nullable=False)
     # "starttls" (587), "ssl" (465) or "none" (internal relay, usually 25)
     smtp_security: Mapped[str] = mapped_column(
@@ -239,7 +237,7 @@ class SystemSettings(Base):
         Boolean, default=False, server_default=sa_false(), nullable=False
     )
     smtp_username: Mapped[str] = mapped_column(
-        String(255), default="", server_default="", nullable=False
+        String(255), default="noc@kazyon.com", server_default="", nullable=False
     )
     smtp_password_encrypted: Mapped[str] = mapped_column(
         Text, default="", server_default="", nullable=False

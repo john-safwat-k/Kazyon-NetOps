@@ -314,15 +314,12 @@ export interface EmailLoopStatusDTO {
   open_isp_threads_count: number;
   awaiting_branch_threads_count: number;
   mailbox_account: string;
-  imap_host: string;
-  imap_port?: number;
-  imap_credentials_configured?: boolean;
   smtp_host: string;
   smtp_port?: number;
+  smtp_security?: SmtpSecurity;
   smtp_enabled?: boolean;
   smtp_credentials_configured?: boolean;
   test_redirect_email?: string;
-  provider_preset?: "gmail" | "office365" | "kazyon" | "custom";
   smtp_listener: SmtpListenerStatusDTO;
 }
 
@@ -624,21 +621,6 @@ export interface VllmConnectionTestResult {
   error: string | null;
 }
 
-export interface ImapConnectionTestResult {
-  ok: boolean;
-  host: string;
-  port: number;
-  use_ssl: boolean;
-  folder: string;
-  authenticated: boolean;
-  credentials_configured: boolean;
-  stage: "config" | "connect" | "auth" | "select" | "done";
-  latency_ms: number;
-  message_count: number | null;
-  unseen_count: number | null;
-  error: string | null;
-}
-
 export interface SendTestEmailResult {
   ok: boolean;
   recipient: string;
@@ -651,13 +633,6 @@ export interface SendTestEmailResult {
 export interface SystemSettingsDTO {
   global_ai_kill_switch: boolean;
   mailbox_account: string;
-  imap_host: string;
-  imap_port: number;
-  imap_use_ssl: boolean;
-  imap_folder: string;
-  imap_username: string;
-  imap_credentials_configured: boolean;
-  imap_password?: string;
   smtp_host: string;
   smtp_port: number;
   smtp_security: SmtpSecurity;
@@ -1419,19 +1394,6 @@ export const settingsApi = {
     mailbox_account?: string;
   }): Promise<SmtpConnectionTestResult> {
     return apiRequest<SmtpConnectionTestResult>("/api/v1/settings/test-smtp", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-  testImap(payload: {
-    imap_host?: string;
-    imap_port?: number;
-    imap_use_ssl?: boolean;
-    imap_folder?: string;
-    imap_username?: string;
-    imap_password?: string;
-  }): Promise<ImapConnectionTestResult> {
-    return apiRequest<ImapConnectionTestResult>("/api/v1/settings/test-imap", {
       method: "POST",
       body: JSON.stringify(payload),
     });

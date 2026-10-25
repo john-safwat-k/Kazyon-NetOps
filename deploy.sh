@@ -232,7 +232,11 @@ WS_SCHEME="ws"
 # 3. SSH Command Helpers & ControlMaster Multiplexing
 # ------------------------------------------------------------------------------
 mkdir -p "$HOME/.ssh/sockets" 2>/dev/null || true
-SSH_SOCKET="$HOME/.ssh/sockets/it-net-%r@%h-%p"
+if [ -S "$HOME/.ssh/sockets/kazyon-${SERVER_USER}@${SERVER_HOST}-${SSH_PORT}" ]; then
+    SSH_SOCKET="$HOME/.ssh/sockets/kazyon-%r@%h-%p"
+else
+    SSH_SOCKET="$HOME/.ssh/sockets/it-net-%r@%h-%p"
+fi
 SSH_OPTS=(-p "$SSH_PORT" -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath="$SSH_SOCKET" -o ControlPersist=300)
 
 run_remote() {

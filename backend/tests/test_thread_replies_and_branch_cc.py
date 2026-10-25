@@ -96,7 +96,9 @@ def test_split_email_thread_replies_parses_all_separators_and_real_info_eml() ->
 
     # Also verify real multi-reply .eml in Info/
     info_dir = Path(__file__).resolve().parent.parent.parent / "Info"
-    multi_eml = info_dir / "Re_ [Request ID _##RE-8407532##] _ Kazyon #E33209 #6181183 #6203901 #1251.eml"
+    multi_eml = (
+        info_dir / "Re_ [Request ID _##RE-8407532##] _ Kazyon #E33209 #6181183 #6203901 #1251.eml"
+    )
     if multi_eml.exists():
         env = parse_eml_bytes(multi_eml.read_bytes())
         real_replies = split_email_thread_replies(env.body_text)
@@ -117,7 +119,9 @@ async def test_agent_reads_full_email_thread_and_every_reply_for_context(
         schema: type[Any],
         images: list[bytes] | None = None,
     ) -> Any:
-        user_msg = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") != "system")
+        user_msg = "\n".join(
+            str(m.get("content", "")) for m in messages if m.get("role") != "system"
+        )
         captured_prompts.append(user_msg)
         return default_fake_vllm_responder(messages, schema, images)
 
@@ -159,7 +163,9 @@ async def test_agent_reads_full_email_thread_and_every_reply_for_context(
     assert len(res["triage"]["raw_analysis"]["thread_replies"]) == 3
 
     # Verify the LLM prompt included both Fresh Body and Thread Replies / Full Thread Body
-    assert any("Thread Replies (3 in email" in p and "Full Thread Body:" in p for p in captured_prompts)
+    assert any(
+        "Thread Replies (3 in email" in p and "Full Thread Body:" in p for p in captured_prompts
+    )
 
     # Verify the ISP escalation email used the phone number extracted from Reply #2 of the thread
     ticket = db_session.execute(
@@ -176,71 +182,40 @@ async def test_agent_reads_full_email_thread_and_every_reply_for_context(
     assert "010 8877 6655" in isp_outbound.body_text
 
 
-def test_imap_poller_does_not_skip_replies_matching_in_reply_to(
+@pytest.mark.asyncio
+async def test_dropbox_poller_consumes_replies_matching_in_reply_to(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """Verify `_fetch_unseen_imap_messages_sync` only deduplicates on the message's own `Message-ID`,
-    never skipping a thread reply whose `In-Reply-To` or `References` contains an already-ingested `Message-ID`."""
+    """Verify `poll_inbound_mailbox_raw` consumes `.eml` thread replies from the local dropbox
+    while preserving `Message-ID` and `In-Reply-To` headers for thread correlation."""
     parent_mid = "<parent-msg-001@kazyon.com>"
     reply_mid = "<reply-msg-002@kazyon.com>"
 
-    # Simulate parent_mid already ingested
-    monkeypatch.setattr(imap_poller, "_ingested_imap_mids", {parent_mid.lower()})
+    dropbox = tmp_path / "inbound_eml"
+    dropbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(imap_poller, "inbound_dropbox_dir", lambda: dropbox)
 
     reply_eml_bytes = build_synthetic_eml_bytes(
-        sender="user@gmail.com",
-        recipients=["itsupport-agent@kazyon.com"],
+        sender="GITSupport@kazyon.com",
+        recipients=["noc@kazyon.com"],
         subject="Re: Follow up",
         body_text="We restarted the router and active phone is 010 1234 5678.",
         message_id=reply_mid,
         in_reply_to=parent_mid,
         references=[parent_mid],
     )
-    raw_header_peek = (
-        f"Message-ID: {reply_mid}\r\n"
-        f"In-Reply-To: {parent_mid}\r\n"
-        f"References: {parent_mid}\r\n"
-        "From: user@gmail.com\r\n"
-        "Subject: Re: Follow up\r\n\r\n"
-    ).encode("utf-8")
+    eml_file = dropbox / "reply.eml"
+    eml_file.write_bytes(reply_eml_bytes)
 
-    class FakeImapConn:
-        def __init__(self, host: str, port: int) -> None:
-            self.host = host
-            self.port = port
-
-        def login(self, username: str, password: str) -> tuple[str, list[bytes]]:
-            return "OK", [b"Logged in"]
-
-        def select(self, folder: str) -> tuple[str, list[bytes]]:
-            return "OK", [b"1"]
-
-        def search(self, charset: Any, criterion: str) -> tuple[str, list[bytes]]:
-            return "OK", [b"1"]
-
-        def fetch(self, num: str, query: str) -> tuple[str, list[ Any]]:
-            if "HEADER.FIELDS" in query:
-                return "OK", [(b"1 (BODY[HEADER.FIELDS] {180}", raw_header_peek), b")"]
-            return "OK", [(b"1 (BODY[] {500}", reply_eml_bytes), b")"]
-
-        def logout(self) -> tuple[str, list[bytes]]:
-            return "BYE", [b"Logging out"]
-
-    monkeypatch.setattr(imap_poller.imaplib, "IMAP4_SSL", FakeImapConn)
-
-    fetched = imap_poller._fetch_unseen_imap_messages_sync(
-        host="imap.gmail.com",
-        port=993,
-        username="itsupport-agent@kazyon.com",
-        password="secret",
-        use_ssl=True,
-        folder="INBOX",
-    )
+    fetched = await imap_poller.poll_inbound_mailbox_raw()
     assert len(fetched) == 1
     fname, fetched_bytes = fetched[0]
+    assert fname == "reply.eml"
     parsed = parse_eml_bytes(fetched_bytes)
     assert parsed.message_id == reply_mid
     assert parsed.in_reply_to == parent_mid
+    assert not eml_file.exists()
 
 
 @pytest.mark.asyncio
@@ -390,7 +365,11 @@ async def test_every_outbound_email_to_branch_ccs_regional_it_email(
         ),
         actor=actor,
     )
-    assert all(expected_reg_it in (m.cc_addr or "") for m in detail_after_manual.branch_emails if m.outbound)
+    assert all(
+        expected_reg_it in (m.cc_addr or "")
+        for m in detail_after_manual.branch_emails
+        if m.outbound
+    )
 
     # 7. Direct `dispatch_outbound_email` on BRANCH thread without explicit `cc` still auto-CCs branch.regional_it_email
     ticket_obj = db_session.execute(
@@ -413,7 +392,9 @@ async def test_every_outbound_email_to_branch_ccs_regional_it_email(
     assert any(len(m.thread_replies) >= 1 for m in detail_360.branch_emails)
     triage_logs = list_mailbox_triage_logs(db_session)
     branch_out_logs = [
-        row for row in triage_logs if row["ticket"] == ticket_num and row["dir"] == "OUT" and row["thread_type"] == "BRANCH"
+        row
+        for row in triage_logs
+        if row["ticket"] == ticket_num and row["dir"] == "OUT" and row["thread_type"] == "BRANCH"
     ]
     assert branch_out_logs
     assert all(expected_reg_it in row["cc"] for row in branch_out_logs)

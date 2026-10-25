@@ -117,8 +117,7 @@ async def classify_inbound_email(
         max_chars=6000,
     )
     prior_history_text = "\n".join(
-        f"{m.get('subject', '')}\n{m.get('body_text', '')}"
-        for m in reversed(thread_history or [])
+        f"{m.get('subject', '')}\n{m.get('body_text', '')}" for m in reversed(thread_history or [])
     )
 
     branch_code = (

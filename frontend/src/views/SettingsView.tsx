@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AppShell, Badge, Button } from "../design-system";
 import {
-  ImapConnectionTestResult,
   SendTestEmailResult,
   SmtpConnectionTestResult,
   SmtpListenerStatusDTO,
@@ -15,19 +14,13 @@ import { ConsoleViewProps } from "./types";
 
 const DEFAULT_SETTINGS: SystemSettingsDTO = {
   global_ai_kill_switch: false,
-  mailbox_account: "itsupport-agent@kazyon.com",
-  imap_host: "imap.gmail.com",
-  imap_port: 993,
-  imap_use_ssl: true,
-  imap_folder: "INBOX",
-  imap_username: "",
-  imap_credentials_configured: false,
-  smtp_host: "smtp.gmail.com",
+  mailbox_account: "noc@kazyon.com",
+  smtp_host: "mail.kazyon.com",
   smtp_port: 587,
   smtp_security: "starttls",
-  smtp_enabled: false,
-  smtp_username: "",
-  smtp_credentials_configured: false,
+  smtp_enabled: true,
+  smtp_username: "noc@kazyon.com",
+  smtp_credentials_configured: true,
   test_redirect_email: "",
   poll_interval_sec: 30,
   vllm_endpoint: "http://10.100.109.9:8002/v1",
@@ -65,14 +58,6 @@ const SMTP_STAGE_LABELS: Record<SmtpConnectionTestResult["stage"], string> = {
   tls: "TLS failed",
   auth: "Login rejected",
   sender: "Sender refused",
-  done: "Connected",
-};
-
-const IMAP_STAGE_LABELS: Record<ImapConnectionTestResult["stage"], string> = {
-  config: "Config missing",
-  connect: "Can't reach server",
-  auth: "Login rejected",
-  select: "Folder missing",
   done: "Connected",
 };
 
@@ -118,11 +103,7 @@ export function SettingsView({
 }: ConsoleViewProps) {
   const [settings, setSettings] =
     useState<SystemSettingsDTO>(DEFAULT_SETTINGS);
-  const [imapPasswordInput, setImapPasswordInput] = useState("");
   const [smtpPasswordInput, setSmtpPasswordInput] = useState("");
-  const [imapTest, setImapTest] = useState<
-    TestState<ImapConnectionTestResult>
-  >({ kind: "idle" });
   const [smtpTest, setSmtpTest] = useState<
     TestState<SmtpConnectionTestResult>
   >({ kind: "idle" });
@@ -160,87 +141,16 @@ export function SettingsView({
   const handleSaveAll = async () => {
     try {
       const payload: Partial<SystemSettingsDTO> = { ...settings };
-      if (imapPasswordInput.trim()) {
-        payload.imap_password = imapPasswordInput.trim();
-      }
       if (smtpPasswordInput.trim()) {
         payload.smtp_password = smtpPasswordInput.trim();
       }
       const updated = await settingsApi.update(payload);
       setSettings(updated);
-      setImapPasswordInput("");
       setSmtpPasswordInput("");
-      setToast("All settings saved (encrypted credentials stored) and recorded in the audit log.");
+      setToast("All settings saved (encrypted SMTP credentials stored) and recorded in the audit log.");
     } catch {
       setToast("Failed to save settings.");
     }
-  };
-
-  const handleApplyProviderPreset = (
-    preset: "gmail" | "kazyon" | "office365",
-  ) => {
-    setImapTest({ kind: "idle" });
-    setSmtpTest({ kind: "idle" });
-    if (preset === "gmail") {
-      setSettings((s) => ({
-        ...s,
-        imap_host: "imap.gmail.com",
-        imap_port: 993,
-        imap_use_ssl: true,
-        imap_folder: "INBOX",
-        smtp_host: "smtp.gmail.com",
-        smtp_port: 587,
-        smtp_security: "starttls",
-        smtp_enabled: true,
-        test_redirect_email:
-          s.test_redirect_email ||
-          (s.imap_username.includes("@gmail.com") ? s.imap_username : ""),
-      }));
-      setToast(
-        "Applied Gmail Testing preset (imap.gmail.com:993 SSL + smtp.gmail.com:587 STARTTLS). Enter your Gmail address & 16-char Google App Password, then click Save.",
-      );
-    } else if (preset === "kazyon") {
-      setSettings((s) => ({
-        ...s,
-        mailbox_account: "itsupport-agent@kazyon.com",
-        imap_host: "mail.kazyon.com",
-        imap_port: 993,
-        imap_use_ssl: true,
-        imap_folder: "INBOX",
-        smtp_host: "mail.kazyon.com",
-        smtp_port: 587,
-        smtp_security: "starttls",
-      }));
-      setToast("Applied Kazyon Exchange preset (mail.kazyon.com).");
-    } else {
-      setSettings((s) => ({
-        ...s,
-        imap_host: "outlook.office365.com",
-        imap_port: 993,
-        imap_use_ssl: true,
-        imap_folder: "INBOX",
-        smtp_host: "smtp.office365.com",
-        smtp_port: 587,
-        smtp_security: "starttls",
-      }));
-      setToast("Applied Office 365 preset (outlook.office365.com / smtp.office365.com).");
-    }
-  };
-
-  const handleCopyImapLoginToSmtp = () => {
-    setSettings((s) => ({
-      ...s,
-      smtp_username: s.imap_username || s.mailbox_account,
-      mailbox_account: s.imap_username || s.mailbox_account,
-      test_redirect_email:
-        s.test_redirect_email || s.imap_username || s.mailbox_account,
-    }));
-    if (imapPasswordInput) {
-      setSmtpPasswordInput(imapPasswordInput);
-    }
-    setToast(
-      "Copied IMAP login to SMTP sender, username, and Safe Test Redirect Email.",
-    );
   };
 
   const handleToggleKillSwitch = async () => {
@@ -258,26 +168,6 @@ export function SettingsView({
       );
     } catch {
       // Keep local toggle
-    }
-  };
-
-  const handleTestImap = async () => {
-    setImapTest({ kind: "running" });
-    try {
-      const result = await settingsApi.testImap({
-        imap_host: settings.imap_host,
-        imap_port: settings.imap_port,
-        imap_use_ssl: settings.imap_use_ssl,
-        imap_folder: settings.imap_folder,
-        imap_username: settings.imap_username || undefined,
-        imap_password: imapPasswordInput.trim() || undefined,
-      });
-      setImapTest({ kind: "done", result });
-    } catch (err) {
-      setImapTest({
-        kind: "request_failed",
-        message: err instanceof Error ? err.message : "Request failed",
-      });
     }
   };
 
@@ -306,10 +196,7 @@ export function SettingsView({
     setRoundTripTest({ kind: "running" });
     try {
       const result = await settingsApi.sendTestEmail({
-        recipient:
-          settings.test_redirect_email ||
-          settings.imap_username ||
-          settings.mailbox_account,
+        recipient: settings.test_redirect_email || settings.mailbox_account,
         branch_code: "1084",
       });
       setRoundTripTest({ kind: "done", result });
@@ -450,80 +337,6 @@ export function SettingsView({
         </button>
       </section>
 
-      <section
-        className="kz-card"
-        style={{
-          padding: "14px 18px",
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 15 }}>
-              Mail Provider Quick Presets (Gmail vs Kazyon Exchange)
-            </h2>
-            <Badge
-              tone={
-                settings.imap_host.toLowerCase().includes("gmail.com")
-                  ? "info"
-                  : "brand"
-              }
-            >
-              {settings.imap_host.toLowerCase().includes("gmail.com")
-                ? "Gmail Testing Mode"
-                : settings.imap_host.toLowerCase().includes("kazyon.com")
-                  ? "Kazyon Exchange"
-                  : "Custom / Office 365"}
-            </Badge>
-          </div>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 12,
-              color: "var(--ink-muted)",
-            }}
-          >
-            Switch between <code>imap.gmail.com</code> / <code>smtp.gmail.com</code>{" "}
-            (using a 16-character Google App Password) for live testing or{" "}
-            <code>mail.kazyon.com</code> for production.
-          </p>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button
-            type="button"
-            className="kz-btn kz-btn-primary kz-btn-sm"
-            onClick={() => handleApplyProviderPreset("gmail")}
-          >
-            Use Gmail for Testing (imap.gmail.com)
-          </button>
-          <button
-            type="button"
-            className="kz-btn kz-btn-secondary kz-btn-sm"
-            onClick={() => handleApplyProviderPreset("kazyon")}
-          >
-            Kazyon Exchange (mail.kazyon.com)
-          </button>
-          <button
-            type="button"
-            className="kz-btn kz-btn-secondary kz-btn-sm"
-            onClick={() => handleApplyProviderPreset("office365")}
-          >
-            Office 365
-          </button>
-          <button
-            type="button"
-            className="kz-btn kz-btn-secondary kz-btn-sm"
-            onClick={() => onNavigate("Mailbox & Triage")}
-          >
-            Open Mail Simulation Sandbox →
-          </button>
-        </div>
-      </section>
-
       <div
         style={{
           display: "grid",
@@ -535,193 +348,18 @@ export function SettingsView({
         <section className="kz-card">
           <div className="kz-card-hd">
             <div>
-              <h2>Inbound email (IMAP Poller — Gmail / Exchange)</h2>
-              <p>Polls unseen emails from Gmail or Exchange INBOX</p>
+              <h2>Outbound email (SMTP)</h2>
+              <p>Escalations, chasers, and branch replies via Kazyon SMTP</p>
             </div>
-            {imapTest.kind === "idle" && (
+            {smtpTest.kind === "idle" && (
               <Badge
-                tone={settings.imap_credentials_configured ? "info" : "neutral"}
+                tone={settings.smtp_credentials_configured ? "info" : "neutral"}
               >
-                {settings.imap_credentials_configured
+                {settings.smtp_credentials_configured
                   ? "Credentials saved"
                   : "Not tested"}
               </Badge>
             )}
-            {imapTest.kind === "running" && <Badge tone="neutral">Testing…</Badge>}
-            {imapTest.kind === "request_failed" && (
-              <Badge tone="critical">Test failed</Badge>
-            )}
-            {imapTest.kind === "done" && (
-              <Badge tone={imapTest.result.ok ? "good" : "critical"}>
-                {imapTest.result.ok
-                  ? `IMAP ✓ · ${imapTest.result.unseen_count ?? 0} unseen (${imapTest.result.latency_ms} ms)`
-                  : `IMAP ✗ · ${IMAP_STAGE_LABELS[imapTest.result.stage]}`}
-              </Badge>
-            )}
-          </div>
-          <div
-            className="kz-card-bd"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 12,
-              fontSize: 13,
-            }}
-          >
-            <label style={labelStyle}>
-              IMAP host
-              <input
-                value={settings.imap_host}
-                placeholder="imap.gmail.com"
-                onChange={(e) => {
-                  setSettings((s) => ({ ...s, imap_host: e.target.value }));
-                  setImapTest({ kind: "idle" });
-                }}
-                className="kz-mono"
-                style={fieldStyle}
-              />
-            </label>
-            <label style={labelStyle}>
-              IMAP port
-              <input
-                type="number"
-                value={settings.imap_port}
-                onChange={(e) => {
-                  setSettings((s) => ({
-                    ...s,
-                    imap_port: Number(e.target.value) || 993,
-                  }));
-                  setImapTest({ kind: "idle" });
-                }}
-                style={fieldStyle}
-              />
-            </label>
-            <label style={labelStyle}>
-              Folder
-              <input
-                value={settings.imap_folder}
-                placeholder="INBOX"
-                onChange={(e) =>
-                  setSettings((s) => ({ ...s, imap_folder: e.target.value }))
-                }
-                className="kz-mono"
-                style={fieldStyle}
-              />
-            </label>
-            <label style={labelStyle}>
-              Poll every (sec)
-              <input
-                type="number"
-                value={settings.poll_interval_sec}
-                onChange={(e) =>
-                  setSettings((s) => ({
-                    ...s,
-                    poll_interval_sec: Number(e.target.value) || 30,
-                  }))
-                }
-                style={fieldStyle}
-              />
-            </label>
-            <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>
-              IMAP Username / Gmail Address
-              <input
-                value={settings.imap_username}
-                placeholder="your-test-mailbox@gmail.com"
-                onChange={(e) =>
-                  setSettings((s) => ({ ...s, imap_username: e.target.value }))
-                }
-                className="kz-mono"
-                style={fieldStyle}
-              />
-            </label>
-            <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>
-              IMAP Password / 16-char Google App Password
-              <input
-                type="password"
-                value={imapPasswordInput}
-                placeholder={
-                  settings.imap_credentials_configured
-                    ? "•••••••••••••••• (saved encrypted — enter new to replace)"
-                    : "abcd efgh ijkl mnop (Google App Password)"
-                }
-                onChange={(e) => setImapPasswordInput(e.target.value)}
-                className="kz-mono"
-                style={fieldStyle}
-              />
-            </label>
-            <label
-              style={{
-                gridColumn: "1 / -1",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                fontWeight: 600,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={settings.imap_use_ssl}
-                onChange={(e) =>
-                  setSettings((s) => ({ ...s, imap_use_ssl: e.target.checked }))
-                }
-              />
-              Use IMAPS SSL/TLS (port 993 — required for Gmail)
-            </label>
-            <div
-              style={{
-                gridColumn: "1 / -1",
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <button
-                type="button"
-                className="kz-btn kz-btn-secondary kz-btn-sm"
-                onClick={handleTestImap}
-                disabled={imapTest.kind === "running"}
-              >
-                {imapTest.kind === "running"
-                  ? "Testing IMAP…"
-                  : "Test IMAP connection"}
-              </button>
-              <button
-                type="button"
-                className="kz-btn kz-btn-secondary kz-btn-sm"
-                onClick={handleCopyImapLoginToSmtp}
-              >
-                Copy Gmail login to Outbound SMTP →
-              </button>
-            </div>
-            {imapTest.kind === "request_failed" && (
-              <p style={resultTextStyle} role="alert">
-                Could not run IMAP test: {imapTest.message}
-              </p>
-            )}
-            {imapTest.kind === "done" && (
-              <p
-                style={resultTextStyle}
-                className="kz-mono"
-                role={imapTest.result.ok ? undefined : "alert"}
-              >
-                {imapTest.result.host}:{imapTest.result.port} (
-                {imapTest.result.folder}) ·{" "}
-                {imapTest.result.ok
-                  ? `Connected · ${imapTest.result.message_count ?? 0} total messages · ${imapTest.result.unseen_count ?? 0} unseen`
-                  : imapTest.result.error}
-              </p>
-            )}
-          </div>
-        </section>
-
-        <section className="kz-card">
-          <div className="kz-card-hd">
-            <div>
-              <h2>Outbound email (SMTP)</h2>
-              <p>Escalations, chasers, branch replies &amp; Gmail redirect</p>
-            </div>
-            {smtpTest.kind === "idle" && <Badge tone="neutral">Not tested</Badge>}
             {smtpTest.kind === "running" && <Badge tone="neutral">Testing…</Badge>}
             {smtpTest.kind === "request_failed" && (
               <Badge tone="critical">Test failed</Badge>
@@ -770,12 +408,14 @@ export function SettingsView({
               Sender address (From)
               <input
                 value={settings.mailbox_account}
+                placeholder="noc@kazyon.com"
                 onChange={(e) =>
                   setSettings((s) => ({
                     ...s,
                     mailbox_account: e.target.value,
                   }))
                 }
+                className="kz-mono"
                 style={fieldStyle}
               />
             </label>
@@ -783,7 +423,7 @@ export function SettingsView({
               SMTP host
               <input
                 value={settings.smtp_host}
-                placeholder="smtp.gmail.com"
+                placeholder="mail.kazyon.com"
                 onChange={(e) => {
                   setSettings((s) => ({ ...s, smtp_host: e.target.value }));
                   setSmtpTest({ kind: "idle" });
@@ -800,7 +440,7 @@ export function SettingsView({
                 onChange={(e) => {
                   setSettings((s) => ({
                     ...s,
-                    smtp_port: Number(e.target.value) || 25,
+                    smtp_port: Number(e.target.value) || 587,
                   }));
                   setSmtpTest({ kind: "idle" });
                 }}
@@ -825,7 +465,7 @@ export function SettingsView({
               SMTP Username
               <input
                 value={settings.smtp_username}
-                placeholder="your-test-mailbox@gmail.com"
+                placeholder="noc@kazyon.com"
                 onChange={(e) =>
                   setSettings((s) => ({ ...s, smtp_username: e.target.value }))
                 }
@@ -834,14 +474,14 @@ export function SettingsView({
               />
             </label>
             <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>
-              SMTP Password / Google App Password
+              SMTP Password
               <input
                 type="password"
                 value={smtpPasswordInput}
                 placeholder={
                   settings.smtp_credentials_configured
                     ? "•••••••••••••••• (saved encrypted — enter new to replace)"
-                    : "abcd efgh ijkl mnop (or leave blank for internal relay)"
+                    : "Enter service account password"
                 }
                 onChange={(e) => setSmtpPasswordInput(e.target.value)}
                 className="kz-mono"
@@ -849,10 +489,10 @@ export function SettingsView({
               />
             </label>
             <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>
-              Safe Test Redirect Email (Optional — protects real ISPs during Gmail testing)
+              Safe Test Redirect Email (Optional — protects real ISPs during testing)
               <input
                 value={settings.test_redirect_email}
-                placeholder="e.g. your-test-mailbox@gmail.com (leave empty in production)"
+                placeholder="Leave empty in production to email real Branches & ISPs"
                 onChange={(e) =>
                   setSettings((s) => ({
                     ...s,
@@ -871,7 +511,7 @@ export function SettingsView({
               >
                 When set, all outbound Branch, ISP (NOOR/ORANGE/WE), and Human
                 Escalation emails are redirected to this address with a role-play
-                banner so you can reply from Gmail as either the Branch or the ISP.
+                banner.
               </span>
             </label>
             <div
@@ -899,7 +539,7 @@ export function SettingsView({
               >
                 {roundTripTest.kind === "running"
                   ? "Sending…"
-                  : "Send live test email to Inbox"}
+                  : "Send live test email"}
               </button>
             </div>
             {smtpTest.kind === "request_failed" && (
@@ -932,7 +572,7 @@ export function SettingsView({
                 role={roundTripTest.result.ok ? undefined : "alert"}
               >
                 {roundTripTest.result.ok
-                  ? `Sent test email to ${roundTripTest.result.recipient} in ${roundTripTest.result.latency_ms} ms (${roundTripTest.result.message_id}). Click "Poll Now" on Mailbox & Triage to ingest it!`
+                  ? `Sent test email to ${roundTripTest.result.recipient} in ${roundTripTest.result.latency_ms} ms (${roundTripTest.result.message_id}).`
                   : `Send failed: ${roundTripTest.result.error}`}
               </p>
             )}
@@ -942,7 +582,7 @@ export function SettingsView({
         <section className="kz-card">
           <div className="kz-card-hd">
             <div>
-              <h2>Inbound email (SMTP listener)</h2>
+              <h2>Inbound email (SMTP listener &amp; dropbox poller)</h2>
               <p>Your mail server forwards branch and ISP mail here</p>
             </div>
             {listener === null && <Badge tone="neutral">Unknown</Badge>}
@@ -958,6 +598,20 @@ export function SettingsView({
             className="kz-card-bd"
             style={{ display: "grid", gap: 10, fontSize: 13 }}
           >
+            <label style={labelStyle}>
+              Dropbox &amp; SLA poll interval (sec)
+              <input
+                type="number"
+                value={settings.poll_interval_sec}
+                onChange={(e) =>
+                  setSettings((s) => ({
+                    ...s,
+                    poll_interval_sec: Number(e.target.value) || 30,
+                  }))
+                }
+                style={fieldStyle}
+              />
+            </label>
             {listener === null && (
               <p style={{ margin: 0, color: "var(--ink-muted)" }}>
                 Could not load the listener status.
@@ -1012,13 +666,20 @@ export function SettingsView({
                 )}
               </dl>
             )}
-            <div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
                 className="kz-btn kz-btn-secondary kz-btn-sm"
                 onClick={loadListenerStatus}
               >
                 Refresh
+              </button>
+              <button
+                type="button"
+                className="kz-btn kz-btn-secondary kz-btn-sm"
+                onClick={() => onNavigate("Mailbox & Triage")}
+              >
+                Open Mail Simulation Sandbox →
               </button>
             </div>
           </div>

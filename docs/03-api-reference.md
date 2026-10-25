@@ -110,7 +110,7 @@
 
 ### `POST /api/v1/emails/poll-now`
 - **Auth:** `require_permission("emails:view")`
-- **Response (`200 OK`):** Immediately polls the configured IMAP mailbox, the local `.eml` dropbox (`data/imports/inbox/`) and the vLLM retry queue (`LLM_RETRY_QUEUE_DIR`; only emails whose `LLM_RETRY_BACKOFF_SEC` backoff has passed). It ingests new messages through the autonomous workflow and runs the 2h Welcome SLA & 4–6h ISP follow-up chaser cycle. A message whose ingest crashes is stored as `INGEST_FAILED` and reported to the human engineer instead of being dropped.
+- **Response (`200 OK`):** Immediately polls the local `.eml` dropbox (`data/imports/inbox/`) and the vLLM retry queue (`LLM_RETRY_QUEUE_DIR`; only emails whose `LLM_RETRY_BACKOFF_SEC` backoff has passed). It ingests new messages through the autonomous workflow and runs the 2h Welcome SLA & 4–6h ISP follow-up chaser cycle. A message whose ingest crashes is stored as `INGEST_FAILED` and reported to the human engineer instead of being dropped.
 
 ### `POST /api/v1/emails/trigger`
 - **Auth:** `require_permission("emails:view")`
@@ -227,15 +227,10 @@ These are the settings the agent actually runs with:
 - **Behaviour:** Calls `GET /v1/models`.
 - **Response (`200 OK`):** `VllmConnectionTestResult` `{ ok, endpoint, configured_model, model_available, available_models, latency_ms, error }`. `ok` is `true` only if the server answers and serves `DEFAULT_WORKER_MODEL`.
 
-> `POST /api/v1/settings/test-connection` was removed. It always returned `{"status": "ok", "label": "IMAP ✓ · SMTP ✓"}` without checking anything.
-
-### `POST /api/v1/settings/test-imap` (`settings:read`)
-Opens a real IMAP session (`imaplib.IMAP4_SSL` or `IMAP4`), authenticates (`LOGIN`), selects the configured folder (`INBOX`), and counts total and `UNSEEN` messages.
-- **Request:** `{"imap_host"?: str, "imap_port"?: int, "imap_use_ssl"?: bool, "imap_folder"?: str, "imap_username"?: str, "imap_password"?: str}`
-- **Response:** `{"ok": bool, "host": str, "port": int, "use_ssl": bool, "folder": str, "authenticated": bool, "credentials_configured": bool, "stage": "config"|"connect"|"auth"|"select"|"done", "latency_ms": int, "message_count": int|null, "unseen_count": int|null, "error": str|null}`
+> `POST /api/v1/settings/test-connection` and `POST /api/v1/settings/test-imap` were removed (the system uses SMTP only).
 
 ### `POST /api/v1/settings/send-test-email` (`settings:update`)
-Sends a live test email through the configured SMTP server (e.g. `smtp.gmail.com`) into the target inbox so the operator can verify round-trip delivery and IMAP polling.
+Sends a live test email through the configured SMTP server (`mail.kazyon.com:587` as `noc@kazyon.com`) into the target inbox so the operator can verify outbound SMTP delivery.
 - **Request:** `{"recipient"?: str, "subject"?: str, "body_text"?: str, "branch_code"?: str}`
 - **Response:** `{"ok": bool, "recipient": str, "subject": str, "message_id": str, "latency_ms": int, "error": str|null}`
 

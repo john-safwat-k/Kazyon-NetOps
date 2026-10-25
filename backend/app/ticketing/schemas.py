@@ -173,12 +173,6 @@ class SystemSettingsDto(BaseModel):
 
     global_ai_kill_switch: bool
     mailbox_account: str
-    imap_host: str
-    imap_port: int
-    imap_use_ssl: bool = True
-    imap_folder: str = "INBOX"
-    imap_username: str = ""
-    imap_credentials_configured: bool = False
     smtp_host: str
     smtp_port: int
     smtp_security: Literal["starttls", "ssl", "none"]
@@ -211,12 +205,6 @@ class SystemSettingsUpdateRequest(BaseModel):
 
     global_ai_kill_switch: Optional[bool] = None
     mailbox_account: Optional[str] = Field(default=None, min_length=3, max_length=255)
-    imap_host: Optional[str] = Field(default=None, max_length=255)
-    imap_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    imap_use_ssl: Optional[bool] = None
-    imap_folder: Optional[str] = Field(default=None, max_length=120)
-    imap_username: Optional[str] = Field(default=None, max_length=255)
-    imap_password: Optional[str] = Field(default=None, max_length=255)
     smtp_host: Optional[str] = Field(default=None, max_length=255)
     smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)
     smtp_security: Optional[SmtpSecurity] = None
@@ -266,34 +254,8 @@ class SmtpConnectionTestResult(BaseModel):
     error: Optional[str] = None
 
 
-class ImapConnectionTestRequest(BaseModel):
-    """Optional unsaved values from the Page 12 form; omitted fields use the saved settings."""
-
-    imap_host: Optional[str] = Field(default=None, max_length=255)
-    imap_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    imap_use_ssl: Optional[bool] = None
-    imap_folder: Optional[str] = Field(default=None, max_length=120)
-    imap_username: Optional[str] = Field(default=None, max_length=255)
-    imap_password: Optional[str] = Field(default=None, max_length=255)
-
-
-class ImapConnectionTestResult(BaseModel):
-    ok: bool
-    host: str
-    port: int
-    use_ssl: bool
-    folder: str
-    authenticated: bool
-    credentials_configured: bool
-    stage: Literal["config", "connect", "auth", "select", "done"]
-    latency_ms: int
-    message_count: Optional[int] = None
-    unseen_count: Optional[int] = None
-    error: Optional[str] = None
-
-
 class SendTestEmailRequest(BaseModel):
-    """Send a live test email via configured SMTP (e.g. Gmail round-trip test)."""
+    """Send a live test email via configured SMTP."""
 
     recipient: Optional[str] = Field(default=None, max_length=255)
     subject: Optional[str] = Field(default=None, max_length=255)

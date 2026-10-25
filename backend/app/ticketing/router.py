@@ -35,8 +35,6 @@ from app.observability.event_bus import event_bus
 from app.ticketing.schemas import (
     DashboardSummaryResponse,
     EscalationItemDto,
-    ImapConnectionTestRequest,
-    ImapConnectionTestResult,
     KanbanTicketCardDto,
     ReplicationParseRequest,
     SendTestEmailRequest,
@@ -72,7 +70,6 @@ from app.ticketing.service import (
     override_ticket_vision_verdict,
     send_live_test_email,
     send_ticket_manual_reply,
-    test_imap_settings,
     test_smtp_settings,
     test_vllm_settings,
     update_system_settings,
@@ -411,23 +408,13 @@ async def test_smtp_settings_endpoint(
     return await test_smtp_settings(db, payload)
 
 
-@settings_router.post("/test-imap", response_model=ImapConnectionTestResult)
-async def test_imap_settings_endpoint(
-    payload: ImapConnectionTestRequest,
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_permission("settings:read")),
-) -> ImapConnectionTestResult:
-    """Open a real IMAP session (connect, LOGIN, SELECT folder, UNSEEN count) (Page 12)."""
-    return await test_imap_settings(db, payload)
-
-
 @settings_router.post("/send-test-email", response_model=SendTestEmailResult)
 async def send_test_email_endpoint(
     payload: SendTestEmailRequest,
     db: Session = Depends(get_db),
     _user: User = Depends(require_permission("settings:update")),
 ) -> SendTestEmailResult:
-    """Send a live test email via configured SMTP (e.g. Gmail round-trip test into INBOX)."""
+    """Send a live test email via configured SMTP."""
     return await send_live_test_email(db, payload)
 
 

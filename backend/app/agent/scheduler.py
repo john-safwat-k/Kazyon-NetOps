@@ -14,10 +14,7 @@ from app.agent.workflow import ingest_and_triage_eml, record_failed_ingest
 from app.common.contracts import EscalationReason, TicketStatus
 from app.common.database import SessionLocal
 from app.directory.models import Branch
-from app.email_engine.imap_poller import (
-    imap_transport_config_from_row,
-    poll_inbound_mailbox_raw,
-)
+from app.email_engine.imap_poller import poll_inbound_mailbox_raw
 from app.email_engine.smtp_listener import get_listener_status
 from app.email_engine.smtp_sender import (
     dispatch_outbound_email,
@@ -179,17 +176,12 @@ async def run_sla_chaser_cycle(db: Session) -> dict[str, Any]:
 
 async def run_email_loop_cycle_once(db: Session) -> dict[str, Any]:
     """Execute one full cycle of the Email Agent Harness Loop:
-    1. Poll IMAP mailbox & local `.eml` dropbox (`data/imports/inbox/`)
+    1. Poll inbound SMTP `.eml` dropbox (`data/imports/inbox/`) and vLLM retry queue
     2. Ingest, correlate, classify, and execute autonomous actions on each new message
     3. Run the 2h Welcome SLA & 4–6h ISP Follow-Up Chaser cycle
     """
-    settings_row = ensure_system_settings(db)
-    imap_cfg = imap_transport_config_from_row(settings_row)
-    raw_messages = await poll_inbound_mailbox_raw(
-        imap_host=settings_row.imap_host,
-        imap_port=settings_row.imap_port,
-        imap_config=imap_cfg,
-    )
+    ensure_system_settings(db)
+    raw_messages = await poll_inbound_mailbox_raw()
 
     ingested_results: list[dict[str, Any]] = []
     for fname, raw_bytes in raw_messages:
@@ -276,17 +268,7 @@ def get_email_loop_status(db: Session) -> dict[str, Any]:
         or 0
     )
 
-    imap_cfg = imap_transport_config_from_row(settings_row)
     smtp_cfg = smtp_transport_config_from_row(settings_row)
-    host_lower = (settings_row.imap_host or settings_row.smtp_host or "").lower()
-    if "gmail.com" in host_lower:
-        provider_preset = "gmail"
-    elif "office365" in host_lower or "outlook" in host_lower:
-        provider_preset = "office365"
-    elif "kazyon.com" in host_lower:
-        provider_preset = "kazyon"
-    else:
-        provider_preset = "custom"
 
     return {
         "background_loop_running": bool(_loop_telemetry.get("background_loop_running", False)),
@@ -300,15 +282,12 @@ def get_email_loop_status(db: Session) -> dict[str, Any]:
         "open_isp_threads_count": open_isp_threads,
         "awaiting_branch_threads_count": awaiting_branch_threads,
         "mailbox_account": settings_row.mailbox_account,
-        "imap_host": settings_row.imap_host,
-        "imap_port": settings_row.imap_port,
-        "imap_credentials_configured": imap_cfg.credentials_configured,
         "smtp_host": settings_row.smtp_host,
         "smtp_port": settings_row.smtp_port,
+        "smtp_security": settings_row.smtp_security,
         "smtp_enabled": smtp_cfg.enabled,
         "smtp_credentials_configured": smtp_cfg.credentials_configured,
         "test_redirect_email": smtp_cfg.test_redirect_email,
-        "provider_preset": provider_preset,
         "smtp_listener": get_listener_status(),
     }
 

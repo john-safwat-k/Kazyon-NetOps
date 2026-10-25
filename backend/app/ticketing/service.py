@@ -29,10 +29,6 @@ from app.diagnostics.base import DualPingTracerouteRequest
 from app.diagnostics.service import list_recent_diagnostic_runs, run_and_persist_diagnostics
 from app.directory.models import Branch
 from app.directory.service import ensure_directory_seeded, get_branch_by_code
-from app.email_engine.imap_poller import (
-    imap_transport_config_from_row,
-    test_imap_connection_sync,
-)
 from app.email_engine.parser import split_email_thread_replies
 from app.email_engine.smtp_sender import (
     _send_via_live_smtp_sync,
@@ -57,8 +53,6 @@ from app.ticketing.models import (
 from app.ticketing.schemas import (
     DashboardSummaryResponse,
     EscalationItemDto,
-    ImapConnectionTestRequest,
-    ImapConnectionTestResult,
     KanbanTicketCardDto,
     SendTestEmailRequest,
     SendTestEmailResult,
@@ -125,20 +119,25 @@ def ensure_system_settings(db: Session) -> SystemSettings:
     if row is not None:
         return row
 
+    settings = get_settings()
     row = SystemSettings(
         config_key="global",
         global_ai_kill_switch=False,
-        mailbox_account="itsupport-agent@kazyon.com",
-        imap_host="outlook.office365.com",
+        mailbox_account="noc@kazyon.com",
+        imap_host="",
         imap_port=993,
-        smtp_host="",
+        smtp_host="mail.kazyon.com",
         smtp_port=587,
         smtp_security="starttls",
-        smtp_enabled=False,
+        smtp_enabled=bool(settings.smtp_password),
+        smtp_username=settings.smtp_username,
+        smtp_password_encrypted=(
+            encrypt_secret(settings.smtp_password) if settings.smtp_password else ""
+        ),
         poll_interval_sec=30,
-        vllm_endpoint=f"{get_settings().vllm_base_url.rstrip('/')}/v1",
-        vllm_temperature=get_settings().vllm_temperature,
-        vllm_max_tokens=get_settings().vllm_max_tokens,
+        vllm_endpoint=f"{settings.vllm_base_url.rstrip('/')}/v1",
+        vllm_temperature=settings.vllm_temperature,
+        vllm_max_tokens=settings.vllm_max_tokens,
         confidence_threshold=80,
         welcome_sla_minutes=120,
         followup_interval_minutes=300,
@@ -195,7 +194,47 @@ def purge_legacy_demo_data(db: Session) -> None:
 def ensure_operational_seed_data(db: Session) -> None:
     """Ensure real Excel store directory (1,150 stores, 3 ISPs) and system settings exist, with no demo data."""
     ensure_directory_seeded(db)
-    ensure_system_settings(db)
+    row = ensure_system_settings(db)
+    settings = get_settings()
+    legacy_accounts = {
+        "",
+        "itsupport-agent@kazyon.com",
+        "network-support@kazyon.com",
+        "network-support-dev@kazyon.com",
+        "johnsafwat362@gmail.com",
+    }
+    legacy_hosts = {"", "smtp.office365.com", "smtp.gmail.com", "outlook.office365.com"}
+    changed = False
+    if (row.mailbox_account or "").strip() in legacy_accounts or "@gmail.com" in (
+        row.mailbox_account or ""
+    ).lower():
+        row.mailbox_account = "noc@kazyon.com"
+        changed = True
+    if (row.smtp_host or "").strip() in legacy_hosts:
+        row.smtp_host = "mail.kazyon.com"
+        row.smtp_port = 587
+        row.smtp_security = "starttls"
+        changed = True
+    if (row.smtp_username or "").strip() in legacy_accounts or "@gmail.com" in (
+        row.smtp_username or ""
+    ).lower():
+        row.smtp_username = settings.smtp_username or "noc@kazyon.com"
+        changed = True
+    if settings.smtp_password and (not row.smtp_password_encrypted or changed):
+        row.smtp_password_encrypted = encrypt_secret(settings.smtp_password)
+        row.smtp_enabled = True
+        changed = True
+    if row.imap_host or row.imap_username or row.imap_password_encrypted:
+        row.imap_host = ""
+        row.imap_username = ""
+        row.imap_password_encrypted = ""
+        changed = True
+    if "@gmail.com" in (row.test_redirect_email or "").lower():
+        row.test_redirect_email = ""
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(row)
 
 
 def _build_kanban_card_dto(db: Session, ticket: Ticket) -> KanbanTicketCardDto:
@@ -507,7 +546,7 @@ def get_dashboard_summary(db: Session, range_key: str = "7d") -> DashboardSummar
                 "state": "ok",
             },
             {
-                "name": "IMAP / SMTP Mailbox",
+                "name": "SMTP Mailbox (noc@kazyon.com)",
                 "detail": "Service account active",
                 "state": "ok",
             },
@@ -1563,10 +1602,7 @@ def list_mailbox_triage_logs(db: Session) -> list[dict[str, Any]]:
 
 def _settings_dto(row: SystemSettings) -> SystemSettingsDto:
     dto = SystemSettingsDto.model_validate(row)
-    imap_cfg = imap_transport_config_from_row(row)
     smtp_cfg = smtp_transport_config_from_row(row)
-    dto.imap_username = row.imap_username or imap_cfg.username
-    dto.imap_credentials_configured = imap_cfg.credentials_configured
     dto.smtp_username = row.smtp_username or smtp_cfg.username
     dto.smtp_credentials_configured = smtp_cfg.credentials_configured
     dto.test_redirect_email = row.test_redirect_email or ""
@@ -1587,10 +1623,7 @@ def update_system_settings(
     row = ensure_system_settings(db)
     changes = payload.model_dump(exclude_none=True)
     for k, v in changes.items():
-        if k == "imap_password":
-            clean_pw = v.strip() if isinstance(v, str) else ""
-            row.imap_password_encrypted = encrypt_secret(clean_pw) if clean_pw else ""
-        elif k == "smtp_password":
+        if k == "smtp_password":
             clean_pw = v.strip() if isinstance(v, str) else ""
             row.smtp_password_encrypted = encrypt_secret(clean_pw) if clean_pw else ""
         else:
@@ -1652,37 +1685,8 @@ async def test_smtp_settings(
     return SmtpConnectionTestResult.model_validate(result)
 
 
-async def test_imap_settings(
-    db: Session, payload: ImapConnectionTestRequest
-) -> ImapConnectionTestResult:
-    """Open a real IMAP session with the saved settings, overridden by any unsaved form values."""
-    row = ensure_system_settings(db)
-    saved = imap_transport_config_from_row(row)
-    username = (
-        payload.imap_username.strip()
-        if payload.imap_username is not None and payload.imap_username.strip()
-        else saved.username
-    )
-    password = (
-        payload.imap_password.strip()
-        if payload.imap_password is not None and payload.imap_password.strip()
-        else saved.password
-    )
-    cfg = replace(
-        saved,
-        host=(payload.imap_host if payload.imap_host is not None else saved.host).strip(),
-        port=payload.imap_port or saved.port,
-        use_ssl=payload.imap_use_ssl if payload.imap_use_ssl is not None else saved.use_ssl,
-        folder=(payload.imap_folder.strip() if payload.imap_folder else saved.folder) or "INBOX",
-        username=username,
-        password=password,
-    )
-    result = await asyncio.to_thread(test_imap_connection_sync, cfg)
-    return ImapConnectionTestResult.model_validate(result)
-
-
 async def send_live_test_email(db: Session, payload: SendTestEmailRequest) -> SendTestEmailResult:
-    """Send a live test email through the configured SMTP server (e.g. Gmail round-trip test)."""
+    """Send a live test email through the configured SMTP server."""
     import time as _time
     from uuid import uuid4 as _uuid4
 
@@ -1692,19 +1696,17 @@ async def send_live_test_email(db: Session, payload: SendTestEmailRequest) -> Se
     recipient = (
         (payload.recipient or "").strip()
         or saved.test_redirect_email
-        or saved.username
         or saved.from_address
+        or saved.username
     )
     sap = (payload.branch_code or "1084").strip()
-    subject = (
-        payload.subject or ""
-    ).strip() or f"Store {sap} network down — Gmail Live Round-Trip Test"
+    subject = (payload.subject or "").strip() or f"Store {sap} network down — Kazyon Live SMTP Test"
     body = (payload.body_text or "").strip() or (
         f"Dear Network Support,\n"
         f"Store {sap} is offline and POS terminals are not syncing.\n"
         f"Router photo checked: all cables seated and power LED is green.\n"
         f"Site contact: 010 2345 8817\n\n"
-        f"[Sent via Kazyon Live SMTP Round-Trip Tester]"
+        f"[Sent via Kazyon Live SMTP Tester]"
     )
     mid = f"<test-{_uuid4().hex[:12]}@kazyon.com>"
     try:

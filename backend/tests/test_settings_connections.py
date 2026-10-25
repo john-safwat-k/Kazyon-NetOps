@@ -631,46 +631,40 @@ def test_settings_update_saves_and_reports_credentials_flag(
     assert client.put("/api/v1/settings", json={"smtp_security": "tls"}).status_code == 422
 
 
-def test_gmail_encrypted_imap_and_smtp_credentials_saved_and_never_leaked(
+def test_encrypted_smtp_credentials_saved_and_never_leaked(
     client: TestClient, db_session: Session
 ) -> None:
     from app.common.crypto import decrypt_secret
 
-    secret_pw = "abcd-efgh-ijkl-mnop"
+    secret_pw = "smtp-test-secret-pw-1234"
     resp = client.put(
         "/api/v1/settings",
         json={
-            "mailbox_account": "my-sandbox@gmail.com",
-            "imap_host": "imap.gmail.com",
-            "imap_port": 993,
-            "imap_use_ssl": True,
-            "imap_folder": "INBOX",
-            "imap_username": "my-sandbox@gmail.com",
-            "imap_password": secret_pw,
-            "smtp_host": "smtp.gmail.com",
+            "mailbox_account": "noc@kazyon.com",
+            "smtp_host": "mail.kazyon.com",
             "smtp_port": 587,
             "smtp_security": "starttls",
             "smtp_enabled": True,
-            "smtp_username": "my-sandbox@gmail.com",
+            "smtp_username": "noc@kazyon.com",
             "smtp_password": secret_pw,
-            "test_redirect_email": "my-sandbox@gmail.com",
+            "test_redirect_email": "sandbox@kazyon.com",
         },
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["imap_host"] == "imap.gmail.com"
-    assert body["imap_username"] == "my-sandbox@gmail.com"
-    assert body["imap_credentials_configured"] is True
-    assert body["smtp_username"] == "my-sandbox@gmail.com"
+    assert body["mailbox_account"] == "noc@kazyon.com"
+    assert body["smtp_host"] == "mail.kazyon.com"
+    assert body["smtp_port"] == 587
+    assert body["smtp_security"] == "starttls"
+    assert body["smtp_username"] == "noc@kazyon.com"
     assert body["smtp_credentials_configured"] is True
-    assert body["test_redirect_email"] == "my-sandbox@gmail.com"
+    assert body["test_redirect_email"] == "sandbox@kazyon.com"
     assert secret_pw not in resp.text
 
     db_session.expire_all()
     row = ensure_system_settings(db_session)
-    assert row.imap_password_encrypted != secret_pw
-    assert row.imap_password_encrypted.startswith("gAAAAA")
-    assert decrypt_secret(row.imap_password_encrypted) == secret_pw
+    assert row.smtp_password_encrypted != secret_pw
+    assert row.smtp_password_encrypted.startswith("gAAAAA")
     assert decrypt_secret(row.smtp_password_encrypted) == secret_pw
 
 
@@ -685,8 +679,8 @@ async def test_outbound_mail_safe_redirect_routes_isp_escalation_to_test_redirec
         smtp_port=server.port,
         smtp_security="none",
         smtp_enabled=True,
-        mailbox_account="my-sandbox@gmail.com",
-        test_redirect_email="my-sandbox@gmail.com",
+        mailbox_account="noc@kazyon.com",
+        test_redirect_email="sandbox@kazyon.com",
     )
 
     row = await dispatch_outbound_email(
@@ -703,38 +697,14 @@ async def test_outbound_mail_safe_redirect_routes_isp_escalation_to_test_redirec
 
     assert row.recipients == ["noc@noor.net"]
     assert row.ai_analysis_json["smtp_live_sent"] is True
-    assert row.ai_analysis_json["test_redirected_to"] == "my-sandbox@gmail.com"
+    assert row.ai_analysis_json["test_redirected_to"] == "sandbox@kazyon.com"
     assert len(server.messages) == 1
-    assert server.messages[0]["rcpts"] == ["my-sandbox@gmail.com"]
+    assert server.messages[0]["rcpts"] == ["sandbox@kazyon.com"]
     assert "X-Kz-Original-To: noc@noor.net" in server.messages[0]["data"]
     assert "[KAZYON SANDBOX REDIRECT — Thread: ISP" in server.messages[0]["data"]
 
 
-def test_imap_connection_test_endpoint_reports_config_and_connect_stages(
-    client: TestClient,
-) -> None:
-    cfg_res = client.post(
-        "/api/v1/settings/test-imap",
-        json={"imap_host": "", "imap_port": 993, "imap_use_ssl": False},
-    ).json()
-    assert cfg_res["ok"] is False
-    assert cfg_res["stage"] == "config"
-
-    conn_res = client.post(
-        "/api/v1/settings/test-imap",
-        json={
-            "imap_host": "127.0.0.1",
-            "imap_port": _closed_port(),
-            "imap_use_ssl": False,
-            "imap_username": "u@gmail.com",
-            "imap_password": "pw",
-        },
-    ).json()
-    assert conn_res["ok"] is False
-    assert conn_res["stage"] == "connect"
-
-
-def test_gmail_role_play_isp_reply_and_sandbox_stage_trace(
+def test_role_play_isp_reply_and_sandbox_stage_trace(
     client: TestClient, db_session: Session
 ) -> None:
     seed_branches_from_excel(db_session, dry_run=False)

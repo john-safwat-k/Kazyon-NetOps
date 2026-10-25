@@ -2383,7 +2383,7 @@ async def trigger_email_in_loop(
 
     raw_eml = build_synthetic_eml_bytes(
         sender=sender,
-        recipients=["itsupport-agent@kazyon.com"],
+        recipients=["noc@kazyon.com"],
         subject=subject,
         body_text=body_text,
         body_html=body_html,
@@ -2414,7 +2414,7 @@ async def reclassify_existing_email(
 
     raw_eml = build_synthetic_eml_bytes(
         sender=em.sender,
-        recipients=list(em.recipients or ["itsupport-agent@kazyon.com"]),
+        recipients=list(em.recipients or ["noc@kazyon.com"]),
         cc=list(em.cc or []),
         subject=em.subject,
         body_text=em.body_text,

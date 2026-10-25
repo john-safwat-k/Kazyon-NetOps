@@ -303,7 +303,7 @@ export function MailboxTriageView({
     await executeScenarioTrigger(step.scenario, step.role);
   };
 
-  const handleSendLiveGmailTest = async () => {
+  const handleSendLiveSmtpTest = async () => {
     setSimNotice("Sending live test email via configured SMTP server…");
     try {
       const res = await settingsApi.sendTestEmail({
@@ -311,22 +311,22 @@ export function MailboxTriageView({
       });
       if (res.ok) {
         setSimNotice(
-          `Sent live test email to ${res.recipient} (${res.latency_ms} ms). Click "Poll & run SLA loop" to fetch it via IMAP!`,
+          `Sent live test email to ${res.recipient} (${res.latency_ms} ms · ${res.message_id}).`,
         );
       } else {
         setSimNotice(
-          `Live SMTP send failed: ${res.error || "Configure Gmail App Password in AI & SLA Settings first."}`,
+          `Live SMTP send failed: ${res.error || "Check Outbound SMTP settings in AI & SLA Settings."}`,
         );
       }
     } catch {
       setSimNotice(
-        "Could not send live test email. Configure Gmail App Password in AI & SLA Settings.",
+        "Could not send live test email. Check Outbound SMTP settings in AI & SLA Settings.",
       );
     }
   };
 
   const handlePollNow = async () => {
-    setSimNotice("Running IMAP poll & 2h/4–6h SLA chaser cycle…");
+    setSimNotice("Running inbound SMTP dropbox poll & 2h/4–6h SLA chaser cycle…");
     try {
       const res = await emailsApi.pollNow();
       const chased = res.sla_chaser?.chased_count ?? 0;
@@ -418,8 +418,8 @@ export function MailboxTriageView({
         <div>
           <h1>Mailbox &amp; Email Triage</h1>
           <p>
-            Interactive Mail Simulation Sandbox &amp; Live Gmail / Exchange
-            Harness · {inboundCount} inbound · {outboundCount} outbound ·{" "}
+            Interactive Mail Simulation Sandbox &amp; Live SMTP Harness ·{" "}
+            {inboundCount} inbound · {outboundCount} outbound ·{" "}
             {loopStatus
               ? `${loopStatus.open_isp_threads_count} ISP threads active · last poll ${loopStatus.seconds_since_last_poll}s ago`
               : "background poller active"}
@@ -432,7 +432,7 @@ export function MailboxTriageView({
           <Button
             variant="secondary"
             size="sm"
-            onClick={handleSendLiveGmailTest}
+            onClick={handleSendLiveSmtpTest}
           >
             Send live SMTP test
           </Button>
@@ -448,7 +448,7 @@ export function MailboxTriageView({
         </div>
       </div>
 
-      {/* Live Gmail / Exchange Connection & Safe Redirect Status Banner */}
+      {/* Live SMTP Transport & Safe Redirect Status Banner */}
       <section
         className="kz-card"
         style={{
@@ -461,31 +461,28 @@ export function MailboxTriageView({
         }}
       >
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 13 }}>
-          <b>Mailbox Transport:</b>
-          <Badge
-            tone={
-              loopStatus?.provider_preset === "gmail"
-                ? "info"
-                : loopStatus?.provider_preset === "kazyon"
-                  ? "brand"
-                  : "neutral"
-            }
-          >
-            {loopStatus?.provider_preset === "gmail"
-              ? "Gmail Testing (imap.gmail.com)"
-              : loopStatus?.provider_preset === "kazyon"
-                ? "Kazyon Exchange (mail.kazyon.com)"
-                : loopStatus?.imap_host || "Local Sandbox"}
-          </Badge>
-          <Badge tone={loopStatus?.imap_credentials_configured ? "good" : "neutral"}>
-            {loopStatus?.imap_credentials_configured
-              ? "IMAP Login Ready"
-              : "IMAP Local Dropbox"}
+          <b>SMTP Transport:</b>
+          <Badge tone="brand">
+            {loopStatus?.smtp_host || "mail.kazyon.com"}:
+            {loopStatus?.smtp_port ?? 587} ({loopStatus?.mailbox_account || "noc@kazyon.com"})
           </Badge>
           <Badge tone={loopStatus?.smtp_enabled ? "good" : "neutral"}>
             {loopStatus?.smtp_enabled
               ? "Live Outbound SMTP ON"
               : "Outbound SMTP Simulated"}
+          </Badge>
+          <Badge
+            tone={
+              loopStatus?.smtp_listener?.enabled &&
+              loopStatus?.smtp_listener?.running
+                ? "good"
+                : "neutral"
+            }
+          >
+            {loopStatus?.smtp_listener?.enabled &&
+            loopStatus?.smtp_listener?.running
+              ? `Inbound SMTP Listener :${loopStatus.smtp_listener.port}`
+              : "Inbound .eml Dropbox Active"}
           </Badge>
           {loopStatus?.test_redirect_email ? (
             <Badge tone="warning">
@@ -499,7 +496,7 @@ export function MailboxTriageView({
             className="kz-btn kz-btn-secondary kz-btn-sm"
             onClick={() => onNavigate("AI & SLA Settings")}
           >
-            Configure Gmail / App Password →
+            Configure SMTP Settings →
           </button>
         </div>
       </section>
