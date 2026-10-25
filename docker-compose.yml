@@ -29,8 +29,12 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8085}:8000"
+      # Inbound SMTP listener (only answers when SMTP_LISTENER_ENABLED=true): dev 2525, prod 2524
+      - "${SMTP_LISTENER_PUBLISH_PORT:-2525}:${SMTP_LISTENER_PORT:-2525}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    cap_add:
+      - NET_RAW
     env_file:
       - .env
     depends_on:

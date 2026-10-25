@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "dafd488e-49db-421f-a8ad-bf10cef58b4c",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/candidate.json",
+  "output": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/cache-miss-web-request.html",
+  "specification": {
+    "sha256": "69af21ec0592c76d63764153fb92a91d51a623fcdd276cf4f3c56d4d45efbc49",
+    "bytes": 3192
+  },
+  "artifact": {
+    "sha256": "fd99b4d9c57194f595e3234b4fcbf1ffe525fcc05f6c14c6a908ff5166b6f870",
+    "bytes": 812521
+  }
+}

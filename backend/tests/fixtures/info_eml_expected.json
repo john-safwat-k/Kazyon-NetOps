@@ -1,0 +1,506 @@
+{
+  "NOOR NOC - Case No_ 243881 - KAZYON - 2009-Kafr Nasar - Ticket Update.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "2009",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243881"
+  },
+  "NOOR NOC - Case No_ 243923 - KAZYON - 2235- Sultan - Ticket Initiation [was - Store 2235.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "2235",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243923"
+  },
+  "NOOR NOC - Case No_ 243923 - KAZYON - 2235- Sultan - Ticket Update.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "2235",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243923"
+  },
+  "NOOR NOC - Case No_ 243984- KAZYON - 1927-Ahmed Ali Alouba St.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1927",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243984"
+  },
+  "NOOR NOC - Case No_ 244009 - KAZYON-1030 Portsaid st.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1030",
+    "isp_name": "NOOR",
+    "isp_reference_number": "244009"
+  },
+  "NOOR NOC - Case No_ 244010 - KAZYON - 1021- El Geish - Ticket Initiation.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1021",
+    "isp_name": "NOOR",
+    "isp_reference_number": "244010"
+  },
+  "NOOR NOC - Case No_243922 - KAZYON - 2022-Al Baramawy St.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "2022",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243922"
+  },
+  "NOOR NOC - Case No_243928 - KAZYON -1702-Tokh - Ticket Closure.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1702",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243928"
+  },
+  "NOOR NOC - Case No_243928 - KAZYON -1702-Tokh - Ticket Update.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1702",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243928"
+  },
+  "NOOR NOC - Concerning - KAZYON - 1749-Hassan Radwan __ store 1749.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1749",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - KAZYON - 1774-Ibrahim Slama Square __ was __ store 1774.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1774",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - KAZYON -1901-Noor Elesla __ store 1901.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1901",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - KAZYON AbdelMoniem Riad 1298 __ Kazyon #1298.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1298",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - KAZYON Ali Mobark 1078 __ store 1078.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SITE_CONTACT_UNREACHABLE",
+    "branch_code": "1078",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - KAZYON Ali-Heebah 1091 __ was __ store 1091.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1091",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - KAZYON Ali-Heebah 1091 __ was __ store 1091[1].eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1091",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - store 1078.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1078",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning - store 1722 - TI case#243902.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1722",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243902"
+  },
+  "NOOR NOC - Concerning - store 2022.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "2022",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning -store 1749.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1749",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning KAZYON - 2018-Mokattam Sen [ store 2081.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "2018",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Concerning for KAZYON Qalyubia 1387 - Case# 243860 __ Store 1387.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1387",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243860"
+  },
+  "NOOR NOC - KAZYON - 1610-ETSA __ Store 1610.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1610",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "NOOR NOC - Ticket update #243876 - KAZYON - 1904-Sakr Korish - Ticket Closure.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1904",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243876"
+  },
+  "NOOR NOC - Ticket update #243981- Kazyon 2027 - Ticket Closure.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "2027",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243981"
+  },
+  "RE_ Store 1026 # QUO1-10316262.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1026",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312554150402"
+  },
+  "RE_ store 1211 # QUO1-10316780.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1211",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312322942540"
+  },
+  "RE_ store 1211 # QUO1-10316780[1].eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1211",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312322942540"
+  },
+  "RE_ store 1767 # QUO1-10317310.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SITE_CONTACT_UNREACHABLE",
+    "branch_code": "1767",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312307045900"
+  },
+  "RE_ store 1800 # QUO1-10317348.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SITE_CONTACT_UNREACHABLE",
+    "branch_code": "1800",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312307474272"
+  },
+  "RE_ store 1800 # QUO1-10317348[1].eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SITE_CONTACT_UNREACHABLE",
+    "branch_code": "1800",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312307474272"
+  },
+  "RE_ store 1822 # QUO1-10317364.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1822",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312483624857"
+  },
+  "RE_ store 1909 # QUO1-10318699.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1909",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312306233224"
+  },
+  "RE_ store 1909 # QUO1-10318699[1].eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1909",
+    "isp_name": "ORANGE",
+    "isp_reference_number": "1-1312306233224"
+  },
+  "Re_ NOOR NOC - Case # 243876 - KAZYON - 1904-Sakr Korish - Ticket Update.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1904",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243876"
+  },
+  "Re_ NOOR NOC - Case No_ 243924- KAZYON Ali-Heebah 1091- Ticket Update __ Store 1091.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1091",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243924"
+  },
+  "Re_ NOOR NOC - Case No_ 243971 @KAZYON -2027-Hassan el gamal- Ticket Update __ store 2027.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "2027",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243971"
+  },
+  "Re_ NOOR NOC - Concerning - KAZYON - 1565-Cairo Mall __ Store 1565.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1565",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "Re_ NOOR NOC - Concerning - KAZYON - 1788- Mashtol El Souk - MPLS 3G Link __ Store 1788.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1788",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "Re_ NOOR NOC - Concerning - store 1722 - TI case#243902.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1722",
+    "isp_name": "NOOR",
+    "isp_reference_number": "243902"
+  },
+  "Re_ NOOR NOC __ KAZYON - 2281-Galaa St.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "2281",
+    "isp_name": "NOOR",
+    "isp_reference_number": null
+  },
+  "Re_ [Request ID _##RE-8368058##] _ Kazyon #1403 #6175627.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1403",
+    "isp_name": "WE",
+    "isp_reference_number": "8368058"
+  },
+  "Re_ [Request ID _##RE-8374639##] _ kazyon#E33209 #6181181 #6201897 #1247.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1247",
+    "isp_name": "WE",
+    "isp_reference_number": "8374639"
+  },
+  "Re_ [Request ID _##RE-8374771##] _ Kazyon #E33209 #6465027 # 6465028# 1553.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1553",
+    "isp_name": "WE",
+    "isp_reference_number": "8374771"
+  },
+  "Re_ [Request ID _##RE-8381301##] _ Kazyon #E33209 #6175623 # 6181296 #1391.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1391",
+    "isp_name": "WE",
+    "isp_reference_number": "8381301"
+  },
+  "Re_ [Request ID _##RE-8384669##] _ kazyon# E33209 # 6181182 # 623284 2# 1250.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1250",
+    "isp_name": "WE",
+    "isp_reference_number": "8384669"
+  },
+  "Re_ [Request ID _##RE-8389062##] _ Kazyon #1098 #6175603.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1098",
+    "isp_name": "WE",
+    "isp_reference_number": "8389062"
+  },
+  "Re_ [Request ID _##RE-8397901##] _ Kazyon #1403 #6175627.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1403",
+    "isp_name": "WE",
+    "isp_reference_number": "8397901"
+  },
+  "Re_ [Request ID _##RE-8400809##] _ kazyon#E33209#6181161#6201888# 1058.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1058",
+    "isp_name": "WE",
+    "isp_reference_number": "8400809"
+  },
+  "Re_ [Request ID _##RE-8400809##] _ kazyon#E33209#6181161#6201888# 1058[1].eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1058",
+    "isp_name": "WE",
+    "isp_reference_number": "8400809"
+  },
+  "Re_ [Request ID _##RE-8401073##] _ Kazyon #E33209 #6175596  #1029.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1029",
+    "isp_name": "WE",
+    "isp_reference_number": "8401073"
+  },
+  "Re_ [Request ID _##RE-8404185##] _ RE_ [Request ID _##RE-8401476##] _ RE_ [Request ID _##RE-8400809##] _ kazyon#E33209#6181161#6201888# 1058.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1058",
+    "isp_name": "WE",
+    "isp_reference_number": "8404185"
+  },
+  "Re_ [Request ID _##RE-8406517##] _ RE_ [Request ID _##RE-8404185##] _ RE_ [Request ID _##RE-8401476##] _ RE_ [Request ID _##RE-8400809##] _ kazyon#E.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1058",
+    "isp_name": "WE",
+    "isp_reference_number": "8406517"
+  },
+  "Re_ [Request ID _##RE-8407532##] _ Kazyon #1254.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1254",
+    "isp_name": "WE",
+    "isp_reference_number": "8407532"
+  },
+  "Re_ [Request ID _##RE-8411360##] _ kazyon#E33209 #6181181 #6201897 #1247.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1247",
+    "isp_name": "WE",
+    "isp_reference_number": "8411360"
+  },
+  "Re_ [Request ID _##RE-8421379##] _ Kazyon #E33209#6147792#6147793# 1434.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1434",
+    "isp_name": "WE",
+    "isp_reference_number": "8421379"
+  },
+  "Re_ [Request ID _##RE-8421403##] _ Kazyon # E33209 #6181179 # 1219.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1219",
+    "isp_name": "WE",
+    "isp_reference_number": "8421403"
+  },
+  "Re_ [Request ID _##RE-8425442##] _ Kazyon #1256 #6175614 #E33209.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1256",
+    "isp_name": "WE",
+    "isp_reference_number": "8425442"
+  },
+  "Re_ [Request ID _##RE-8427545##] _ Kazyon #E33209 #6181183#6201898#1251.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_CLOSURE",
+    "intent": "ISP_RESOLVED",
+    "branch_code": "1251",
+    "isp_name": "WE",
+    "isp_reference_number": "8427545"
+  },
+  "Re_ [Request ID _##RE-8441304##] _ kazyon#E33209#6181182#6232842#1250.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1250",
+    "isp_name": "WE",
+    "isp_reference_number": "8441304"
+  },
+  "Re_ [Request ID _##RE-8441935##] _ kazyon#E33209#6175612# 1232.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_BLOCKER",
+    "intent": "SPECIAL_BLOCKER",
+    "branch_code": "1232",
+    "isp_name": "WE",
+    "isp_reference_number": "8441935"
+  },
+  "Re_ [Request ID _##RE-8442509##] _ kazyon #E33209 # 6175608# 6181288# 1177.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "ISP_WELCOME",
+    "branch_code": "1177",
+    "isp_name": "WE",
+    "isp_reference_number": "8442509"
+  },
+  "store 1352 # QUO1-10316840.eml": {
+    "trigger_type": "ISP_REPLY",
+    "classification_label": "ISP_WELCOME",
+    "intent": "INVESTIGATING_UPDATE",
+    "branch_code": "1352",
+    "isp_name": "ORANGE",
+    "isp_reference_number": null
+  }
+}

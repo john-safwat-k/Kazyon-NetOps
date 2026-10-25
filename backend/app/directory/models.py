@@ -16,7 +16,7 @@ def _utcnow() -> datetime:
 
 
 class NetworkProvider(Base):
-    """External Network / Internet Service Provider (ISP) record."""
+    """External Network / Internet Service Provider (ISP) record (`NOOR`, `ORANGE`, `WE`)."""
 
     __tablename__ = "network_providers"
 
@@ -24,7 +24,10 @@ class NetworkProvider(Base):
     name: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     support_email: Mapped[str] = mapped_column(String(255), nullable=False)
     cc_emails: Mapped[list[str]] = mapped_column(JSONVariant, default=list, nullable=False)
-    followup_interval_minutes: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    four_g_hub_ip: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    welcome_sla_minutes: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    followup_sla_minutes: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
+    followup_interval_minutes: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
     account_manager_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     escalation_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -37,23 +40,35 @@ class NetworkProvider(Base):
 
 
 class Branch(Base):
-    """Company branch record seeded via Excel/CSV and managed in the web UI."""
+    """Company branch record seeded via Excel (`Copy of All store ISP (2).xlsx`) and managed in UI."""
 
     __tablename__ = "branches"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     branch_code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(200), index=True, nullable=False)
-    region: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
     address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    target_ip: Mapped[str] = mapped_column(String(128), nullable=False)
-    circuit_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    ip_1: Mapped[str] = mapped_column(String(128), default="10.0.0.1", nullable=False)
+    ip_2: Mapped[str] = mapped_column(String(128), default="10.0.0.2", nullable=False)
+    target_ip: Mapped[str] = mapped_column(String(128), default="10.0.0.1", nullable=False)
+    circuit_id: Mapped[str] = mapped_column(String(128), index=True, default="", nullable=False)
     connection_type: Mapped[str] = mapped_column(String(64), default="FIBER", nullable=False)
+    isp_name: Mapped[str] = mapped_column(String(64), default="NOOR", index=True, nullable=False)
+    isp_contact_mail: Mapped[str] = mapped_column(
+        String(255), default="noc@noor.net", nullable=False
+    )
+    regional_it_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    four_g_hub_ip: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    ll_circuit_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    backup_circuit_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     contact_emails: Mapped[list[str]] = mapped_column(JSONVariant, default=list, nullable=False)
     isp_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("network_providers.id", ondelete="SET NULL"), index=True, nullable=True
     )
-    extra_metadata: Mapped[dict[str, str]] = mapped_column(JSONVariant, default=dict, nullable=False)
+    extra_metadata: Mapped[dict[str, str]] = mapped_column(
+        JSONVariant, default=dict, nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False

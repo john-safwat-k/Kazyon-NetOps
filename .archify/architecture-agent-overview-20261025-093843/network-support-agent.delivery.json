@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "71b444e5-fb72-49ed-a445-6c3eda1e3d2d",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/candidate.json",
+  "output": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/network-support-agent.html",
+  "specification": {
+    "sha256": "8c0512ac68f4df6372f10b4178c2e256d693c6836ea984f02dda54478df13199",
+    "bytes": 6649
+  },
+  "artifact": {
+    "sha256": "77ba1432cb9a441ad9008db67974d66ad17dd7f02bdc49ac63daef17b6eb4cce",
+    "bytes": 834892
+  }
+}

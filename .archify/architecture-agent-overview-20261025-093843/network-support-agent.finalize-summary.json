@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/candidate.json",
+    "sha256": "8c0512ac68f4df6372f10b4178c2e256d693c6836ea984f02dda54478df13199",
+    "bytes": 6649
+  },
+  "artifact": {
+    "path": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/network-support-agent.html",
+    "sha256": "77ba1432cb9a441ad9008db67974d66ad17dd7f02bdc49ac63daef17b6eb4cce",
+    "bytes": 834892
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/network-support-agent.finalize.json",
+    "summaryReceipt": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/network-support-agent.finalize-summary.json",
+    "browserCheckReceipt": "/Users/john/Desktop/IT Network Support Agent/.archify/architecture-agent-overview-20261025-093843/network-support-agent.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-25T06:32:00.203Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2508,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 2
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "send-email",
+            "from": "workflow",
+            "to": "sender",
+            "label": "send email",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "isp-thread",
+            "from": "sender",
+            "to": "isp",
+            "label": "escalate / chase",
+            "collectionIndex": 13,
+            "artifactIndex": 14
+          },
+          "bends": 3,
+          "stretch": 1.242
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "workflow → sender needs 3 bends: move node workflow or sender so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "sender → isp needs 3 bends: move node sender or isp so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

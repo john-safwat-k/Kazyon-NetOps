@@ -51,6 +51,7 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+.claude/worktrees/
 
 # ---- Self-signed TLS material ----
 certs/

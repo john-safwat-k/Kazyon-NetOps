@@ -491,24 +491,24 @@ erDiagram
 Because we will implement this system across multiple focused sessions, the work is organized into **6 self-contained phases**:
 
 ### Phase 1: Foundation, Database Schema v2 & 1,150-Store Excel Seeder
-- [ ] Upgrade SQLAlchemy models & Alembic migration to include all v5.0 fields (`ip_1`, `ip_2`, `regional_it_email`, `four_g_hub_ip`, `ll_circuit_id`, `backup_circuit_id`, `ReplicationReport`, `ReplicationReportRow`, `DiagnosticRun` dual-ping columns, `Ticket` SLA & blocker columns).
-- [ ] Build the Excel seeder (`app/directory/seeder.py`) and seed all **1,150 stores** and **3 ISPs (`NOOR`, `ORANGE`, `WE`)** directly from `Info/Copy of All store ISP (2).xlsx`.
-- [ ] Build Auth & Granular RBAC endpoints (`/api/v1/auth/*`, `/api/v1/users/*`) + Directory endpoints (`/api/v1/branches/*`, `/api/v1/isps/*`).
+- [x] Upgrade SQLAlchemy models & Alembic migration to include all v5.0 fields (`ip_1`, `ip_2`, `regional_it_email`, `four_g_hub_ip`, `ll_circuit_id`, `backup_circuit_id`, `ReplicationReport`, `ReplicationReportRow`, `DiagnosticRun` dual-ping columns, `Ticket` SLA & blocker columns).
+- [x] Build the Excel seeder (`app/directory/seeder.py`) and seed all **1,150 stores** and **3 ISPs (`NOOR`, `ORANGE`, `WE`)** directly from `Info/Copy of All store ISP (2).xlsx`.
+- [x] Build Auth & Granular RBAC endpoints (`/api/v1/auth/*`, `/api/v1/users/*`) + Directory endpoints (`/api/v1/branches/*`, `/api/v1/isps/*`).
 
 ### Phase 2: Network Diagnostic Harness (`Ping IP1/IP2` + `ORANGE`/`WE` Traceroute)
-- [ ] Build `app/diagnostics/executor.py` & `service.py` implementing the exact Dual-Ping (`IP 1` Router & `IP 2` Switch) + `ORANGE` (`10.247.8.1`) / `WE` (`172.16.70.33` / `172.17.20.33`) 4G Hub Traceroute decision tree.
-- [ ] Add simulation/mock support for local/dev testing alongside live ICMP `ping` and `traceroute` on `10.100.109.9`.
-- [ ] Expose `/api/v1/diagnostics/*` endpoints for manual and automated runs.
+- [x] Build `app/diagnostics/executor.py` & `service.py` implementing the exact Dual-Ping (`IP 1` Router & `IP 2` Switch) + `ORANGE` (`10.247.8.1`) / `WE` (`172.16.70.33` / `172.17.20.33`) 4G Hub Traceroute decision tree.
+- [x] Add simulation/mock support for local/dev testing alongside live ICMP `ping` and `traceroute` on `10.100.109.9`.
+- [x] Expose `/api/v1/diagnostics/*` endpoints for manual and automated runs.
 
 ### Phase 3: Multimodal AI Vision & Universal Email Triage Engine (`vLLM` on `10.100.109.9:8002`)
-- [ ] Build `app/email_engine/parser.py` to parse `.eml` files, MIME attachments (router photos), HTML tables (`Replication Dashboard`), and correlate threads (`NOOR` Case #, `ORANGE` ticket #, `WE` Request ID `##RE-...##`).
-- [ ] Build `app/agent/classifier.py` using `Gemma 4 26B A4B` (`10.100.109.9:8002`) for:
+- [x] Build `app/email_engine/parser.py` to parse `.eml` files, MIME attachments (router photos), HTML tables (`Replication Dashboard`), and correlate threads (`NOOR` Case #, `ORANGE` ticket #, `WE` Request ID `##RE-...##`).
+- [x] Build `app/agent/classifier.py` using `Gemma 4 26B A4B` (`10.100.109.9:8002`) for:
   1. Router photo visual cable/LED inspection,
   2. Inbound email intent classification, and
   3. ISP response & blocker extraction.
 
 ### Phase 4: End-to-End Autonomous Workflow, SLA Timers & Human Fallback Escalation
-- [ ] Build `app/agent/workflow.py` & `scheduler.py` orchestrating:
+- [x] Build `app/agent/workflow.py` & `scheduler.py` orchestrating:
   - Flow 0: `Replication Dashboard` (`Not Updated` $\rightarrow$ Regional IT email),
   - Main Flow: Store Email $\rightarrow$ Vision Check $\rightarrow$ Dual-Ping/Traceroute $\rightarrow$ ISP Escalation (`NOOR` / `ORANGE` / `WE` templates),
   - 2-Hour Welcome Mail SLA chaser & 4–6 Hour Investigation follow-up loop,
@@ -517,7 +517,7 @@ Because we will implement this system across multiple focused sessions, the work
   - Out-of-Flow / Special Blocker fallback escalation email to Human IT Engineer.
 
 ### Phase 5: Jira-Style Ticketing Web UI & 360° Ticket Detail Console (React)
-- [ ] Build the authenticated React App Shell, Login Page (Page 1), Executive SLA Dashboard (Page 2), Jira-Style Kanban Board (Page 3), Tickets List (Page 4), and Ticket 360° Detail View with 4 Tabs (Page 5).
+- [x] Build the authenticated React App Shell, Login Page (Page 1), Executive SLA Dashboard (Page 2), Jira-Style Kanban Board (Page 3), Tickets List (Page 4), and Ticket 360° Detail View with 4 Tabs (Page 5).
 
 ### Phase 6: Operational Views, `.eml` Simulator & Admin Console (React)
-- [ ] Build Replication Dashboard Monitor (Page 6), Human Escalation Queue (Page 7), Live Mailbox & `.eml` Uploader/Simulator (Page 8), Diagnostics Sandbox (Page 9), 1,150-Branch & ISP Directory UI (Page 10), Users & Permission Matrix UI (Page 11), and System Settings UI (Page 12).
+- [x] Build Replication Dashboard Monitor (Page 6), Human Escalation Queue (Page 7), Live Mailbox & `.eml` Uploader/Simulator (Page 8), Diagnostics Sandbox (Page 9), 1,150-Branch & ISP Directory UI (Page 10), Users & Permission Matrix UI (Page 11), and System Settings UI (Page 12).

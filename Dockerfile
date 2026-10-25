@@ -48,7 +48,7 @@ ENV PYTHONPATH="/app/backend:${PYTHONPATH}" \
 
 EXPOSE 8000
 
-RUN mkdir -p /app/data/imports /app/data/logs && \
+RUN mkdir -p /app/data/imports /app/data/logs /app/data/attachments && \
     chmod +x /app/backend/scripts/entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

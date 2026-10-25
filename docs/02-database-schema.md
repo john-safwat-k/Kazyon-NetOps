@@ -1,17 +1,21 @@
 # 02 — Database Schema & Migrations
 
 ## 1. Migration Ownership
-All schema changes are managed via **Alembic** under `backend/alembic/versions/`.
-- **Initial Migration:** `0001_initial_baseline.py`
-- **Auth Roles & Audit Trail:** `0002_auth_roles_and_audit_logs.py` (adds `users.last_login_at`, `roles`, and `audit_logs`)
+All schema changes are managed via **Alembic** under `backend/alembic/versions/`:
+- **`0001_initial_baseline.py`:** Initial baseline tables (`users`, `network_providers`, `branches`, `tickets`, `diagnostic_runs`, `ticket_emails`, `ticket_events`).
+- **`0002_auth_roles_and_audit_logs.py`:** Adds `users.last_login_at`, `roles`, and `audit_logs`.
+- **`0003_brd_v5_full_schema.py`:** Expands `network_providers`, `branches`, `tickets`, `diagnostic_runs` (nullable `ticket_id` for sandbox runs), `ticket_emails` (nullable `ticket_id` for unmatched triage logs), and creates `replication_reports` and `system_settings`.
+- **`0004_smtp_security_and_enable.py`:** Adds `system_settings.smtp_security` (`VARCHAR(16)`, server default `starttls`) and `system_settings.smtp_enabled` (`BOOLEAN`, server default `false`). Both columns are additive with defaults, so existing rows stay valid and real sending stays off until an admin turns it on.
 
 ## 2. Core Tables
 - `users` (`app/auth/models.py`): Internal users, roles (`role_name`), `is_super_admin`, `is_active`, `permissions` (`JSONB`), and `last_login_at`.
 - `roles` (`app/auth/models.py`): Reusable RBAC role definitions (`slug`, `display_name`, `description`, `is_system`, `permissions` `JSONB`) seeded on startup with `super_admin`, `support_engineer`, and `viewer`.
 - `audit_logs` (`app/common/audit.py`): Immutable security, RBAC, and administrative audit trail (`actor_user_id`, `actor_username`, `action`, `resource_type`, `resource_id`, `summary`, `details_json`, `ip_address`, `created_at`).
-- `network_providers` (`app/directory/models.py`): ISP records, escalation emails, CC lists, and `followup_interval_minutes`.
-- `branches` (`app/directory/models.py`): Branch code, name, `target_ip`, `circuit_id`, `connection_type`, `contact_emails` (`JSONB`), and `isp_id` FK.
-- `tickets` (`app/ticketing/models.py`): Ticket number, status, priority, `branch_id`, `isp_id`, `isp_reference_number`, `ai_automation_enabled`, `last_isp_contact_at`, `next_followup_at`, `followup_count`.
-- `diagnostic_runs` (`app/ticketing/models.py`): Script execution history per ticket (`trigger_source`, `result_status`, `metrics_json`, `raw_output`, `duration_ms`).
-- `ticket_emails` (`app/ticketing/models.py`): Inbound and outbound emails separated by `thread_type` (`BRANCH` vs `ISP`) with `Message-ID` deduplication and `ai_analysis_json`.
-- `ticket_events` (`app/ticketing/models.py`): Chronological audit/timeline log per ticket.
+- `network_providers` (`app/directory/models.py`): ISP records (`NOOR`, `ORANGE`, `WE`), `support_email`, `cc_emails` (`JSONB`), `four_g_hub_ip`, `welcome_sla_minutes` (`120`), `followup_sla_minutes` (`300`), `escalation_template`, and `account_manager_email`.
+- `branches` (`app/directory/models.py`): All 1,150 Kazyon store branches (`branch_code`, `name`, `ip_1` Router `10.<AB>.<CD>.1`, `ip_2` Switch `10.<AB>.<CD>.2`, `region`, `regional_it_email`, `isp_name`, `isp_contact_mail`, `four_g_hub_ip`, `ll_circuit_id`, `backup_circuit_id`, `isp_id`).
+- `tickets` (`app/ticketing/models.py`): Ticket lifecycle records (`ticket_number`, `status`, `priority`, `trigger_source`, `connection_failure_type`, `escalation_reason`, `branch_id`, `isp_id`, `isp_reference_number`, `isp_welcome_received`, `welcome_sla_due_at`, `site_contact_phone`, `router_photo_verified`, `vision_analysis_json`, `ai_automation_enabled`, `last_isp_contact_at`, `next_followup_at`, `followup_count`, `resolved_at`).
+- `diagnostic_runs` (`app/ticketing/models.py`): Dual-ping and traceroute execution logs (`ticket_id` nullable for sandbox runs, `branch_code`, `script_name`, `trigger_source`, `result_status`, `metrics_json`, `raw_output`, `duration_ms`).
+- `ticket_emails` (`app/ticketing/models.py`): Inbound and outbound emails (`ticket_id` nullable for unmatched triage emails, `message_id`, `thread_type` `BRANCH`/`ISP`/`SYSTEM`, `direction`, `sender`, `recipients`, `subject`, `body_text`, `attachments_json`, `classification_label`, `ai_analysis_json`).
+- `ticket_events` (`app/ticketing/models.py`): Chronological timeline and state transition log per ticket (`event_type`, `actor`, `from_status`, `to_status`, `summary`, `details_json`).
+- `replication_reports` (`app/ticketing/models.py`): Ingested `Replication Dashboard - <Date>` reports (`subject`, `report_date`, `total_stores`, `not_updated_count`, `notified_count`, `duplicates_skipped`, `rows_json`).
+- `system_settings` (`app/ticketing/models.py`): Singleton operational configuration row (`global_ai_kill_switch`, `mailbox_account` (also the outbound sender address), `imap_host`, `imap_port`, `imap_use_ssl`, `imap_folder`, `imap_username`, `imap_password_encrypted`, `smtp_host`, `smtp_port`, `smtp_security`, `smtp_enabled`, `smtp_username`, `smtp_password_encrypted`, `test_redirect_email`, `vllm_endpoint`, `confidence_threshold`, `welcome_sla_minutes`, `followup_interval_minutes`, `max_chasers_before_human`, `max_outbound_emails_per_ticket_hour`, `fallback_contacts_json`). Migration `0005_gmail_and_redirect` adds encrypted IMAP/SMTP credentials and `test_redirect_email`.

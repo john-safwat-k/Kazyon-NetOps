@@ -1,0 +1,334 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "How the IT Network Support Agent Works",
+    "subtitle": "Branch incident email → triage → diagnostics → ISP escalation & chasing → verification",
+    "output": ".archify/architecture-agent-overview-20261025-093843/network-support-agent.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "isp",
+      "type": "external",
+      "label": "ISP NOC",
+      "sublabel": "Orange · WE · Noor",
+      "pos": [
+        100,
+        40
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "intake",
+      "type": "backend",
+      "label": "Inbound intake",
+      "sublabel": "IMAP · SMTP · .eml drop",
+      "pos": [
+        100,
+        190
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "Message-ID dedup"
+    },
+    {
+      "id": "branch",
+      "type": "external",
+      "label": "Branch / Regional IT",
+      "sublabel": "incident + replies",
+      "pos": [
+        100,
+        490
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "loop",
+      "type": "backend",
+      "label": "Email agent loop",
+      "sublabel": "scheduler.py",
+      "pos": [
+        340,
+        190
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "every poll interval"
+    },
+    {
+      "id": "workflow",
+      "type": "backend",
+      "label": "Agent workflow",
+      "sublabel": "ingest + triage",
+      "pos": [
+        580,
+        190
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "deterministic"
+    },
+    {
+      "id": "classifier",
+      "type": "backend",
+      "label": "Email classifier",
+      "sublabel": "intent + entities",
+      "pos": [
+        580,
+        40
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "vllm",
+      "type": "cloud",
+      "label": "vLLM Gemma 4",
+      "sublabel": "10.100.109.9:8002",
+      "pos": [
+        820,
+        40
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "tickets",
+      "type": "database",
+      "label": "Tickets",
+      "sublabel": "state machine + timeline",
+      "pos": [
+        820,
+        190
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "PostgreSQL"
+    },
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Kanban console",
+      "sublabel": "React · RBAC",
+      "pos": [
+        1060,
+        190
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "diagnostics",
+      "type": "backend",
+      "label": "Diagnostics harness",
+      "sublabel": "sandboxed subprocess",
+      "pos": [
+        580,
+        340
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "routers",
+      "type": "external",
+      "label": "Branch circuits",
+      "sublabel": "IP1 · IP2 · 4G",
+      "pos": [
+        580,
+        490
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "sender",
+      "type": "backend",
+      "label": "Outbound sender",
+      "sublabel": "SMTP · threaded",
+      "pos": [
+        340,
+        490
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "Redis loop guard"
+    }
+  ],
+  "connections": [
+    {
+      "id": "branch-reports",
+      "from": "branch",
+      "to": "intake",
+      "label": "incident email",
+      "variant": "emphasis"
+    },
+    {
+      "id": "isp-replies",
+      "from": "isp",
+      "to": "intake",
+      "label": "ISP replies"
+    },
+    {
+      "id": "intake-to-loop",
+      "from": "intake",
+      "to": "loop",
+      "label": "raw .eml",
+      "variant": "emphasis"
+    },
+    {
+      "id": "loop-to-workflow",
+      "from": "loop",
+      "to": "workflow",
+      "label": "each message",
+      "variant": "emphasis"
+    },
+    {
+      "id": "classify",
+      "from": "workflow",
+      "to": "classifier",
+      "label": "classify"
+    },
+    {
+      "id": "guided-json",
+      "from": "classifier",
+      "to": "vllm",
+      "label": "guided JSON"
+    },
+    {
+      "id": "run-tests",
+      "from": "workflow",
+      "to": "diagnostics",
+      "label": "run tests",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ping",
+      "from": "diagnostics",
+      "to": "routers",
+      "label": "ping + trace"
+    },
+    {
+      "id": "transition",
+      "from": "workflow",
+      "to": "tickets",
+      "label": "transition"
+    },
+    {
+      "id": "live-updates",
+      "from": "tickets",
+      "to": "ui",
+      "label": "live WS",
+      "variant": "dashed"
+    },
+    {
+      "id": "send-email",
+      "from": "workflow",
+      "to": "sender",
+      "label": "send email",
+      "variant": "emphasis",
+      "toSide": "right"
+    },
+    {
+      "id": "sla-chaser",
+      "from": "loop",
+      "to": "sender",
+      "label": "SLA chasers",
+      "variant": "dashed"
+    },
+    {
+      "id": "branch-thread",
+      "from": "sender",
+      "to": "branch",
+      "label": "branch reply"
+    },
+    {
+      "id": "isp-thread",
+      "from": "sender",
+      "to": "isp",
+      "label": "escalate / chase",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          410,
+          610
+        ],
+        [
+          60,
+          610
+        ],
+        [
+          60,
+          72
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Happy path",
+      "items": [
+        "Branch reports an outage → ticket opens in DIAGNOSING",
+        "Dual-ping + traceroute decide: FULL_OUTAGE or 4G-only → ESCALATED_TO_ISP",
+        "ISP says resolved → VERIFYING → re-test; IP1 + IP2 up → CLOSED"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Other outcomes",
+      "items": [
+        "IP1 up / IP2 down → INTERNAL_LAN_ISSUE, Regional IT notified",
+        "Re-test fails → reopen ESCALATED_TO_ISP and keep chasing",
+        "Scheduler chases overdue ISP tickets on their follow-up timer"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "LLM guardrails",
+      "items": [
+        "Gemma only returns guided-JSON intent + entities",
+        "Python workflow + state machine make every transition",
+        "vLLM down → retry queue, then NEEDS_HUMAN_REVIEW"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Safety stops",
+      "items": [
+        "Global kill switch or per-ticket Pause AI skips autonomous actions",
+        "Auto-Submitted mail never triggers transitions",
+        "Loop guard caps outbound mail per ticket per hour"
+      ]
+    }
+  ]
+}

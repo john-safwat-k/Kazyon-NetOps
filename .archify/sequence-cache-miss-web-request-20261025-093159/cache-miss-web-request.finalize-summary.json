@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "sequence",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/candidate.json",
+    "sha256": "69af21ec0592c76d63764153fb92a91d51a623fcdd276cf4f3c56d4d45efbc49",
+    "bytes": 3192
+  },
+  "artifact": {
+    "path": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/cache-miss-web-request.html",
+    "sha256": "fd99b4d9c57194f595e3234b4fcbf1ffe525fcc05f6c14c6a908ff5166b6f870",
+    "bytes": 812521
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/cache-miss-web-request.finalize.json",
+    "summaryReceipt": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/cache-miss-web-request.finalize-summary.json",
+    "browserCheckReceipt": "/Users/john/Desktop/IT Network Support Agent/.archify/sequence-cache-miss-web-request-20261025-093159/cache-miss-web-request.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-25T06:32:00.203Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3229,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

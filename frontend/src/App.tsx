@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  AppShell,
-  Badge,
-  Button,
-  DashboardScreen,
-  HealthServiceItem,
-  KanbanBoard,
-  useTheme,
-} from "./design-system";
+import { useTheme } from "./design-system";
 import { AuthProvider, getUserInitials, useAuth } from "./lib/auth";
+import { DashboardView } from "./views/DashboardView";
+import { DiagnosticsSandboxView } from "./views/DiagnosticsSandboxView";
+import { DirectoryView } from "./views/DirectoryView";
+import { HumanReviewView } from "./views/HumanReviewView";
+import { KanbanBoardView } from "./views/KanbanBoardView";
 import { LoginView } from "./views/LoginView";
+import { MailboxTriageView } from "./views/MailboxTriageView";
+import { ReplicationMonitorView } from "./views/ReplicationMonitorView";
+import { SettingsView } from "./views/SettingsView";
+import { TicketDetailView } from "./views/TicketDetailView";
+import { TicketsListView } from "./views/TicketsListView";
 import { UsersRbacView } from "./views/UsersRbacView";
 
 interface HealthPayload {
@@ -39,6 +41,7 @@ function ConsoleRouter() {
   const { theme, toggleTheme } = useTheme();
   const { user, isLoading, logout, hasPermission } = useAuth();
   const [activeNav, setActiveNav] = useState<string>("Dashboard");
+  const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
 
   useEffect(() => {
@@ -56,6 +59,15 @@ function ConsoleRouter() {
     },
     [hasPermission],
   );
+
+  const handleNavigate = useCallback((label: string) => {
+    setSelectedTicket(null);
+    setActiveNav(label);
+  }, []);
+
+  const handleOpenTicket = useCallback((ticketNumber: string) => {
+    setSelectedTicket(ticketNumber);
+  }, []);
 
   const envLabel =
     health?.env_slug?.toUpperCase() === "DEV" ? "DEV :8085" : "PROD :8084";
@@ -99,116 +111,70 @@ function ConsoleRouter() {
         ? "Viewer / Auditor"
         : user.role_name;
 
-  const healthServices: HealthServiceItem[] = [
-    {
-      name: "vLLM · Gemma 4 26B",
-      detail: `${health?.vllm_base_url?.replace(/^https?:\/\//, "").replace(/\/v1$/, "") ?? "10.100.109.9:8002"} · 412 ms`,
-      state: "ok",
-    },
-    {
-      name: "IMAP / SMTP Mailbox",
-      detail: "Last poll 14 s ago",
-      state: "ok",
-    },
-    {
-      name: "PostgreSQL 16",
-      detail: ":5434 · 18 conn",
-      state: health?.status === "ok" || !health ? "ok" : "degraded",
-    },
-    {
-      name: "Redis 7",
-      detail: ":6384 · queue depth 9",
-      state: "degraded",
-    },
-  ];
+  const sharedProps = {
+    theme,
+    onToggleTheme: toggleTheme,
+    onNavigate: handleNavigate,
+    onOpenTicket: handleOpenTicket,
+    env: envLabel,
+    initials,
+    userDisplayName: user.display_name,
+    userRoleLabel: roleLabel,
+    onLogout: logout,
+    canAccessNav,
+  };
+
+  if (selectedTicket) {
+    return (
+      <TicketDetailView {...sharedProps} ticketNumber={selectedTicket} />
+    );
+  }
 
   if (activeNav === "Users & Roles" && canAccessNav("Users & Roles")) {
     return (
       <UsersRbacView
         theme={theme}
         onToggleTheme={toggleTheme}
-        onNavigate={setActiveNav}
+        onNavigate={handleNavigate}
         env={envLabel}
-        canAccessNav={canAccessNav}
-      />
-    );
-  }
-
-  if (activeNav === "Dashboard") {
-    return (
-      <DashboardScreen
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onNavigate={setActiveNav}
-        env={envLabel}
-        services={healthServices}
-        initials={initials}
-        userDisplayName={user.display_name}
-        userRoleLabel={roleLabel}
-        onLogout={logout}
         canAccessNav={canAccessNav}
       />
     );
   }
 
   if (activeNav === "Kanban Board") {
-    return (
-      <KanbanBoard
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onNavigate={setActiveNav}
-        env={envLabel}
-        initials={initials}
-        userDisplayName={user.display_name}
-        userRoleLabel={roleLabel}
-        onLogout={logout}
-        canAccessNav={canAccessNav}
-      />
-    );
+    return <KanbanBoardView {...sharedProps} />;
   }
 
-  return (
-    <AppShell
-      active={activeNav}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      onNavigate={setActiveNav}
-      env={envLabel}
-      initials={initials}
-      userDisplayName={user.display_name}
-      userRoleLabel={roleLabel}
-      onLogout={logout}
-      canAccessNav={canAccessNav}
-    >
-      <div className="kz-page-hd">
-        <div>
-          <h1>{activeNav}</h1>
-          <p>
-            Kazyon NetOps Console · Follow the Kazyon NetOps Design System skill
-            to build this screen.
-          </p>
-        </div>
-        <div className="kz-row">
-          <Badge tone="brand">Kazyon NetOps v1</Badge>
-          <Button
-            variant="primary"
-            onClick={() => setActiveNav("Dashboard")}
-          >
-            Back to Dashboard
-          </Button>
-        </div>
-      </div>
-      <div className="kz-card">
-        <div className="kz-card-bd">
-          <p className="kz-muted" style={{ margin: 0 }}>
-            Select <b>Dashboard</b>, <b>Kanban Board</b>, or{" "}
-            <b>Users &amp; Roles</b> in the sidebar to inspect the live Kazyon
-            NetOps screens.
-          </p>
-        </div>
-      </div>
-    </AppShell>
-  );
+  if (activeNav === "Tickets List") {
+    return <TicketsListView {...sharedProps} />;
+  }
+
+  if (activeNav === "Replication Monitor") {
+    return <ReplicationMonitorView {...sharedProps} />;
+  }
+
+  if (activeNav === "Human Review") {
+    return <HumanReviewView {...sharedProps} />;
+  }
+
+  if (activeNav === "Mailbox & Triage") {
+    return <MailboxTriageView {...sharedProps} />;
+  }
+
+  if (activeNav === "Diagnostics Sandbox") {
+    return <DiagnosticsSandboxView {...sharedProps} />;
+  }
+
+  if (activeNav === "Branches & ISPs") {
+    return <DirectoryView {...sharedProps} />;
+  }
+
+  if (activeNav === "AI & SLA Settings") {
+    return <SettingsView {...sharedProps} />;
+  }
+
+  return <DashboardView {...sharedProps} />;
 }
 
 export default function App() {

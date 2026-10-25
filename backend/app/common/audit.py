@@ -51,13 +51,14 @@ def record_audit_event(
     commit: bool = False,
 ) -> AuditLog:
     """Persist an audit log record for administrative or RBAC actions."""
+    safe_summary = summary if len(summary) <= 495 else f"{summary[:492]}..."
     entry = AuditLog(
         actor_user_id=actor_user_id,
         actor_username=actor_username,
         action=action,
         resource_type=resource_type,
         resource_id=str(resource_id) if resource_id is not None else None,
-        summary=summary,
+        summary=safe_summary,
         details_json=details or {},
         ip_address=ip_address,
     )

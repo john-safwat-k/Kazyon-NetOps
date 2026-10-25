@@ -203,6 +203,7 @@ if [ "$TARGET_ENV" = "prod" ]; then
     DEFAULT_APP_PORT="8084"
     DEFAULT_PG_PORT="5434"
     DEFAULT_REDIS_PORT="6384"
+    DEFAULT_SMTP_LISTENER_PORT="2524"
     DEFAULT_PG_DB="it_net_support_prod"
     DEFAULT_PG_USER="it_net_prod"
     ENV_TEMPLATE_FILE=".env.prod.example"
@@ -216,6 +217,7 @@ else
     DEFAULT_APP_PORT="8085"
     DEFAULT_PG_PORT="5435"
     DEFAULT_REDIS_PORT="6385"
+    DEFAULT_SMTP_LISTENER_PORT="2525"
     DEFAULT_PG_DB="it_net_support_dev"
     DEFAULT_PG_USER="it_net_dev"
     ENV_TEMPLATE_FILE=".env.dev.example"
@@ -356,6 +358,7 @@ sync_code() {
         grep -q '^APP_PORT=' '${REMOTE_DIR}/.env' && sed -i 's/^APP_PORT=.*/APP_PORT=${APP_PORT}/' '${REMOTE_DIR}/.env' || echo 'APP_PORT=${APP_PORT}' >> '${REMOTE_DIR}/.env'
         grep -q '^POSTGRES_PORT=' '${REMOTE_DIR}/.env' && sed -i 's/^POSTGRES_PORT=.*/POSTGRES_PORT=${DEFAULT_PG_PORT}/' '${REMOTE_DIR}/.env' || echo 'POSTGRES_PORT=${DEFAULT_PG_PORT}' >> '${REMOTE_DIR}/.env'
         grep -q '^REDIS_PORT=' '${REMOTE_DIR}/.env' && sed -i 's/^REDIS_PORT=.*/REDIS_PORT=${DEFAULT_REDIS_PORT}/' '${REMOTE_DIR}/.env' || echo 'REDIS_PORT=${DEFAULT_REDIS_PORT}' >> '${REMOTE_DIR}/.env'
+        grep -q '^SMTP_LISTENER_PUBLISH_PORT=' '${REMOTE_DIR}/.env' && sed -i 's/^SMTP_LISTENER_PUBLISH_PORT=.*/SMTP_LISTENER_PUBLISH_PORT=${DEFAULT_SMTP_LISTENER_PORT}/' '${REMOTE_DIR}/.env' || echo 'SMTP_LISTENER_PUBLISH_PORT=${DEFAULT_SMTP_LISTENER_PORT}' >> '${REMOTE_DIR}/.env'
 
         # Ensure vLLM points to Gemma 4 26B A4B on 10.100.109.9:8002
         grep -q '^VLLM_BASE_URL=' '${REMOTE_DIR}/.env' && sed -i 's|^VLLM_BASE_URL=.*|VLLM_BASE_URL=http://10.100.109.9:8002|' '${REMOTE_DIR}/.env' || echo 'VLLM_BASE_URL=http://10.100.109.9:8002' >> '${REMOTE_DIR}/.env'

@@ -1,0 +1,276 @@
+Received: from VI6PPF8E9F09045.EURP189.PROD.OUTLOOK.COM (2603:10a6:808:1::19e)
+ by VI0P189MB3662.EURP189.PROD.OUTLOOK.COM with HTTPS; Sun, 4 Oct 2026
+ 13:02:47 +0000
+Received: from AM8P189MB1281.EURP189.PROD.OUTLOOK.COM (2603:10a6:20b:243::16)
+ by VI6PPF8E9F09045.EURP189.PROD.OUTLOOK.COM (2603:10a6:808:1::19e) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.21.472.20; Sun, 4 Oct
+ 2026 13:02:46 +0000
+Received: from AM8P189MB1281.EURP189.PROD.OUTLOOK.COM
+ ([fe80::9b65:7c50:c417:70de]) by AM8P189MB1281.EURP189.PROD.OUTLOOK.COM
+ ([fe80::9b65:7c50:c417:70de%5]) with mapi id 15.21.0472.015; Sun, 4 Oct 2026
+ 13:02:45 +0000
+From: Islam Abbas <islam.abbas@kazyon.com>
+To: Egypt ccc <ccc-eg@orange.com>, Mohamed Hossam El din Moheb
+	<mohamed.hmoheb@orange.com>
+CC: *IT HQ Infrastructure <ITInfrastructure@kazyon.com>
+Subject: store 1352 # QUO1-10316840
+Thread-Topic: store 1352 # QUO1-10316840
+Thread-Index: Ad1UAKV2NGP3DnD6RhCzl//exfn3YA==
+Date: Sun, 4 Oct 2026 13:02:45 +0000
+Message-ID: <AM8P189MB12811F060EC5F49E82A061A89A972@AM8P189MB1281.EURP189.PROD.OUTLOOK.COM>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Exchange-Organization-AuthMechanism: 04
+X-MS-Exchange-Organization-AuthSource: AM8P189MB1281.EURP189.PROD.OUTLOOK.COM
+X-MS-Has-Attach:
+X-Auto-Response-Suppress: DR, OOF, AutoReply
+X-MS-Exchange-Organization-Network-Message-Id: 06b70387-788d-477b-b32a-08df2217c8d1
+X-MS-TNEF-Correlator:
+X-MS-Exchange-Organization-RecordReviewCfmType: 0
+x-ms-exchange-organization-originalclientipaddress: 62.241.137.90
+x-ms-exchange-organization-originalserveripaddress: 2603:10a6:20b:243::16
+x-ms-publictraffictype: Email
+authentication-results: mx.microsoft.com 1; dkim=none (message not signed)
+ header.d=none;dmarc=none action=none header.from=kazyon.com;
+x-ms-office365-filtering-correlation-id: 06b70387-788d-477b-b32a-08df2217c8d1
+x-ms-traffictypediagnostic: AM8P189MB1281:EE_|VI6PPF8E9F09045:EE_|VI0P189MB3662:EE_
+x-forefront-antispam-report: CIP:255.255.255.255;CTRY:;LANG:en;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:AM8P189MB1281.EURP189.PROD.OUTLOOK.COM;PTR:;CAT:NONE;SFS:(13230040)(23010399003)(366016)(376014)(18002099003)(10067099003)(56012099006)(8096899003)(41050700001);DIR:INT;
+x-microsoft-antispam: BCL:0;ARA:13230040|23010399003|366016|376014|18002099003|10067099003|56012099006|8096899003|41050700001;
+x-ms-exchange-crosstenant-network-message-id: 06b70387-788d-477b-b32a-08df2217c8d1
+x-ms-exchange-crosstenant-originalarrivaltime: 04 Oct 2026 13:02:45.8545 (UTC)
+x-ms-exchange-crosstenant-fromentityheader: Hosted
+x-ms-exchange-crosstenant-id: d3aad70d-b34f-430b-beac-7afc1094987b
+x-ms-exchange-crosstenant-mailboxtype: HOSTED
+x-ms-exchange-crosstenant-userprincipalname: G+ifCLcSo4R/yXh7oZvjecsFDwDi/3o2ITiCr05lgxfW91xg7jlxNDzefmMht92i3ty5KwdxjOyK6VKcLLZ0Uw==
+x-ms-exchange-transport-crosstenantheadersstamped: VI6PPF8E9F09045
+x-ms-exchange-transport-endtoendlatency: 00:00:02.0757342
+x-ms-exchange-crosstenant-authsource: AM8P189MB1281.EURP189.PROD.OUTLOOK.COM
+x-ms-exchange-crosstenant-authas: Internal
+X-Microsoft-Antispam-Mailbox-Delivery: ucf:0;jmr:0;auth:0;dest:I;ENG:(910005)(944506478)(944626604)(920097)(425001)(930201)(20251009189)(140003);
+X-Microsoft-Antispam-Message-Info: S2JGvuIE6gB7qgmJv/sCclSEutApLFViJ/JaIzwRNPnW3+0hplqdEtObMKjwIc3sQpY/jw7zOKJpRIfxRyBuFbfohtFnxml9RaKEJadvtiGFehcQOVCw8fueQznbjmmCYA7K5mcjLlr4pexSybHXiG472REd0gVEpI79qeQMJIQgtK5H82BDxs++5fFAARLKPzMBqPJ/4HBGPHwGT1d4182Sm5W8sIGbGB2YV1D4Rwvxr48aabPNXy0q0ByZHe85YtrXs73gco9YcqowbOeEYCfbXCpCurDpTRQ/8B/p3PHDCXdhuPbInexD++fgtzdLq5h7UISHLxZVMKQANGYNqy92hELk7Y1Xx8FTe41cvrQmRwvbkAOubbyzHkMPqSrWrc0iRKLkI0Wr6AQYAQ2r6Gb5CuXK6rw2Qo6sEQHZm57u/0KRSga+HV8/uJPjycZxAsP1T+HV+ZLfhXrMUmnFQI95X3sdvuKo8Bnl5ve6ulRgjR7cgJjfETcPrKxGVfFQwVs9LY70IOvm9EOgILcRMhEWCzsmQIZFiKTSoujqEdqRI9nobS0uTo5E+IplZpsQ2bimCzZS96aYx3Lp/Zng89eDOM6hqAOLUfnkILYV5zd/xpS5KE8pPiWhIBIKhxc7pcxje7MxUHIV4keW8L628hxFamMdrCVv546KIK7tIr9fHJsfDQsCEWJ1f6a6UG3jhHqeqTn07opqoYLM9A+4RFSPyy5W69yEwkJTCrZt6hsPq+nTPG/AQdkWlF3GBAn4hrctu+izFfkVkL8boCbLhbD0VKtI9PNwV71qh6zta37UStw+Jid/McitPejJeWrq
+Content-Type: multipart/alternative;
+	boundary="_000_AM8P189MB12811F060EC5F49E82A061A89A972AM8P189MB1281EURP_"
+MIME-Version: 1.0
+
+--_000_AM8P189MB12811F060EC5F49E82A061A89A972AM8P189MB1281EURP_
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+Dear NOC
+
+
+
+kindly check L.L and 4G connection store 1352
+
+
+
+1352
+
+QUO1-10316840
+
+QUO1-10316841
+
+
+
+ site contact : 01042312121
+
+
+
+
+
+
+
+Islam Abbas
+
+Network Engineer
+
+Information Technology
+
+Tawfeer For Food Product, S.A.E.
+
+Yamama center, 5th floor
+
+3 Dr. Taha Hussein street, Zamalek, Cairo, Egypt.
+
+Mob.: +2 [ 01000316759 ]
+
+Email: islam.abbas@kazyon.com
+
+
+
+
+
+
+--_000_AM8P189MB12811F060EC5F49E82A061A89A972AM8P189MB1281EURP_
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+<html xmlns:v=3D"urn:schemas-microsoft-com:vml" xmlns:o=3D"urn:schemas-micr=
+osoft-com:office:office" xmlns:w=3D"urn:schemas-microsoft-com:office:word" =
+xmlns:m=3D"http://schemas.microsoft.com/office/2004/12/omml" xmlns=3D"http:=
+//www.w3.org/TR/REC-html40"><head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dus-ascii"=
+>
+<meta name=3D"Generator" content=3D"Microsoft Word 15 (filtered medium)">
+<style><!--
+/* Font Definitions */
+@font-face
+	{font-family:"Cambria Math";
+	panose-1:2 4 5 3 5 4 6 3 2 4;}
+@font-face
+	{font-family:Calibri;
+	panose-1:2 15 5 2 2 2 4 3 2 4;}
+@font-face
+	{font-family:Aptos;}
+@font-face
+	{font-family:"Tahoma Bold";
+	panose-1:2 11 8 4 3 5 4 4 2 4;}
+/* Style Definitions */
+p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{margin:0in;
+	font-size:12.0pt;
+	font-family:"Aptos",sans-serif;
+	mso-ligatures:standardcontextual;}
+span.EmailStyle17
+	{mso-style-type:personal-compose;
+	font-family:"Aptos",sans-serif;
+	color:windowtext;}
+.MsoChpDefault
+	{mso-style-type:export-only;}
+@page WordSection1
+	{size:8.5in 11.0in;
+	margin:1.0in 1.0in 1.0in 1.0in;}
+div.WordSection1
+	{page:WordSection1;}
+--></style><!--[if gte mso 9]><xml>
+<o:shapedefaults v:ext=3D"edit" spidmax=3D"1026" />
+</xml><![endif]--><!--[if gte mso 9]><xml>
+<o:shapelayout v:ext=3D"edit">
+<o:idmap v:ext=3D"edit" data=3D"1" />
+</o:shapelayout></xml><![endif]-->
+</head>
+<body lang=3D"EN-US" link=3D"#467886" vlink=3D"#96607D" style=3D"word-wrap:=
+break-word">
+<div class=3D"WordSection1">
+<p style=3D"margin:0in"><span style=3D"color:#212121">Dear NOC&nbsp;</span>=
+<o:p></o:p></p>
+<p style=3D"margin:0in"><span style=3D"color:#212121">&nbsp;</span><o:p></o=
+:p></p>
+<p class=3D"MsoNormal"><span style=3D"color:#212121">kindly check L.L and 4=
+G connection store 1352<o:p></o:p></span></p>
+<p class=3D"MsoNormal"><span style=3D"color:#212121"><o:p>&nbsp;</o:p></spa=
+n></p>
+<table class=3D"MsoNormalTable" border=3D"0" cellspacing=3D"0" cellpadding=
+=3D"0" width=3D"306" style=3D"width:229.25pt;margin-left:-.15pt;border-coll=
+apse:collapse">
+<tbody>
+<tr style=3D"height:15.0pt">
+<td width=3D"60" nowrap=3D"" valign=3D"bottom" style=3D"width:44.75pt;borde=
+r:solid windowtext 1.0pt;padding:0in 5.4pt 0in 5.4pt;height:15.0pt">
+<p class=3D"MsoNormal" align=3D"center" style=3D"text-align:center"><b><spa=
+n style=3D"font-size:11.0pt;font-family:&quot;Calibri&quot;,sans-serif;colo=
+r:black">1352<o:p></o:p></span></b></p>
+</td>
+<td width=3D"126" nowrap=3D"" valign=3D"bottom" style=3D"width:94.5pt;borde=
+r:solid windowtext 1.0pt;border-left:none;padding:0in 5.4pt 0in 5.4pt;heigh=
+t:15.0pt">
+<p class=3D"MsoNormal"><b><span style=3D"font-size:11.0pt;font-family:&quot=
+;Calibri&quot;,sans-serif;color:black">QUO1-10316840<o:p></o:p></span></b><=
+/p>
+</td>
+<td width=3D"120" nowrap=3D"" valign=3D"bottom" style=3D"width:1.25in;borde=
+r:solid windowtext 1.0pt;border-left:none;padding:0in 5.4pt 0in 5.4pt;heigh=
+t:15.0pt">
+<p class=3D"MsoNormal"><b><span style=3D"font-size:11.0pt;font-family:&quot=
+;Calibri&quot;,sans-serif;color:black">QUO1-10316841<o:p></o:p></span></b><=
+/p>
+</td>
+</tr>
+</tbody>
+</table>
+<p style=3D"margin:0in"><o:p>&nbsp;</o:p></p>
+<p class=3D"MsoNormal"><span style=3D"color:#212121">&nbsp;site contact : <=
+/span>01042312121<o:p></o:p></p>
+<p class=3D"MsoNormal"><o:p>&nbsp;</o:p></p>
+<p class=3D"MsoNormal"><o:p>&nbsp;</o:p></p>
+<table class=3D"MsoNormalTable" border=3D"0" cellspacing=3D"0" cellpadding=
+=3D"0" width=3D"631" style=3D"border-collapse:collapse">
+<tbody>
+<tr style=3D"height:21.0pt">
+<td width=3D"40" rowspan=3D"8" valign=3D"top" style=3D"width:30.0pt;padding=
+:0in 5.4pt 0in 5.4pt;height:21.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><b><o:p>&nbsp;</o:p></b><=
+/p>
+</td>
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt;height:21.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-famil=
+y:&quot;Tahoma Bold&quot;">Islam Abbas<o:p></o:p></span></p>
+</td>
+</tr>
+<tr>
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><b><span style=3D"font-si=
+ze:11.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif;color=
+:#F66400">Network Engineer<o:p></o:p></span></b></p>
+</td>
+</tr>
+<tr style=3D"height:22.0pt">
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt;height:22.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-size:=
+11.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif">Informa=
+tion Technology<o:p></o:p></span></p>
+</td>
+</tr>
+<tr style=3D"height:5.0pt">
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt;height:5.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-size:=
+9.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif">Tawfeer =
+For Food Product, S.A.E.<o:p></o:p></span></p>
+</td>
+</tr>
+<tr>
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-size:=
+9.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif">Yamama c=
+enter, 5th floor<o:p></o:p></span></p>
+</td>
+</tr>
+<tr style=3D"height:3.0pt">
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt;height:3.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-size:=
+9.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif">3 Dr. Ta=
+ha Hussein street, Zamalek, Cairo, Egypt.<o:p></o:p></span></p>
+</td>
+</tr>
+<tr style=3D"height:3.0pt">
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt;height:3.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-size:=
+9.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif">Mob.: &#=
+43;2 [ 01000316759 ]<o:p></o:p></span></p>
+</td>
+</tr>
+<tr style=3D"height:3.0pt">
+<td width=3D"591" valign=3D"top" style=3D"width:443.4pt;padding:0in 5.4pt 0=
+in 5.4pt;height:3.0pt">
+<p class=3D"MsoNormal" style=3D"line-height:115%"><span style=3D"font-size:=
+9.0pt;line-height:115%;font-family:&quot;Calibri&quot;,sans-serif;color:blu=
+e">Email: islam.abbas@kazyon.com<o:p></o:p></span></p>
+</td>
+</tr>
+</tbody>
+</table>
+<p class=3D"MsoNormal" style=3D"line-height:115%"><o:p>&nbsp;</o:p></p>
+<p class=3D"MsoNormal"><o:p>&nbsp;</o:p></p>
+</div>
+</body>
+</html>
+
+--_000_AM8P189MB12811F060EC5F49E82A061A89A972AM8P189MB1281EURP_--
