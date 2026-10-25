@@ -144,6 +144,30 @@ export interface TicketEmailItemDTO {
   thread_replies?: ThreadReplyItemDTO[];
 }
 
+export interface ProposedOutboundEmailDTO {
+  thread_type: string;
+  recipients: string[];
+  cc?: string[];
+  subject: string;
+  body_text: string;
+  classification_label?: string;
+}
+
+export interface PendingAdminActionDTO {
+  action_label: string;
+  summary: string;
+  previous_status?: string;
+  target_status?: string | null;
+  transition_reason?: string;
+  connection_failure_type?: string | null;
+  isp_welcome_received?: boolean | null;
+  isp_reference_number?: string | null;
+  followup_minutes?: number | null;
+  proposed_emails?: ProposedOutboundEmailDTO[];
+  context_lines?: string[];
+  requested_at?: string;
+}
+
 export interface TicketDetail360DTO {
   ticket_db_id: number;
   ticket_number: string;
@@ -163,6 +187,8 @@ export interface TicketDetail360DTO {
   sla_minutes_left: number;
   sla_total_minutes: number;
   sla_summary_text: string;
+  escalation_reason?: string | null;
+  pending_admin_action?: PendingAdminActionDTO | null;
   branch: {
     code: string;
     name: string;
@@ -274,6 +300,7 @@ export interface EscalationItemDTO {
   summary: string;
   engineer_email: string;
   primary_action: string;
+  pending_admin_action?: PendingAdminActionDTO | null;
 }
 
 export interface MailboxTriageItemDTO {
@@ -655,6 +682,9 @@ export interface SystemSettingsDTO {
   diagnostic_timeout_sec: number;
   ping_count: number;
   traceroute_max_hops: number;
+  admin_notification_email: string;
+  notify_admin_on_every_action: boolean;
+  require_admin_approval_before_action: boolean;
   fallback_contacts: Array<{
     ini: string;
     email: string;
@@ -1033,6 +1063,22 @@ export const ticketsApi = {
       {
         method: "POST",
         body: JSON.stringify(payload),
+      },
+    );
+  },
+  approveAction(ticketIdentifier: string): Promise<TicketDetail360DTO> {
+    return apiRequest<TicketDetail360DTO>(
+      `/api/v1/tickets/${encodeURIComponent(ticketIdentifier)}/approve-action`,
+      {
+        method: "POST",
+      },
+    );
+  },
+  rejectAction(ticketIdentifier: string): Promise<TicketDetail360DTO> {
+    return apiRequest<TicketDetail360DTO>(
+      `/api/v1/tickets/${encodeURIComponent(ticketIdentifier)}/reject-action`,
+      {
+        method: "POST",
       },
     );
   },

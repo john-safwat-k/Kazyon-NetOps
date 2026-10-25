@@ -24,7 +24,11 @@ from app.common.contracts import (
     TicketStatus,
     TicketTriggerSource,
 )
-from app.common.exceptions import EntityNotFoundError, InvalidStateTransitionError
+from app.common.exceptions import (
+    EntityNotFoundError,
+    InvalidStateTransitionError,
+    ValidationError,
+)
 from app.diagnostics.base import DualPingTracerouteRequest
 from app.diagnostics.service import list_recent_diagnostic_runs, run_and_persist_diagnostics
 from app.directory.models import Branch
@@ -32,9 +36,11 @@ from app.directory.service import ensure_directory_seeded, get_branch_by_code
 from app.email_engine.parser import split_email_thread_replies
 from app.email_engine.smtp_sender import (
     _send_via_live_smtp_sync,
+    dispatch_admin_action_email,
     dispatch_outbound_email,
     format_isp_escalation_email,
     load_smtp_transport_config,
+    resolve_admin_notification_email,
     resolve_branch_regional_it_cc,
     resolve_isp_recipients,
     smtp_transport_config_from_row,
@@ -147,6 +153,9 @@ def ensure_system_settings(db: Session) -> SystemSettings:
         diagnostic_timeout_sec=20,
         ping_count=4,
         traceroute_max_hops=15,
+        admin_notification_email=settings.admin_email or "admin@kazyon.com",
+        notify_admin_on_every_action=True,
+        require_admin_approval_before_action=False,
         fallback_contacts=[
             {"ini": "NO", "email": "noc-oncall@kazyon.com", "role": "On-duty engineer"},
             {
@@ -630,6 +639,10 @@ def get_ticket_360_detail(db: Session, ticket_identifier: str) -> TicketDetail36
         "vision_passed": "good",
         "human_escalated": "critical",
         "diagnostic_triggered": "info",
+        "admin_notified": "info",
+        "admin_approval_requested": "warning",
+        "admin_action_approved": "good",
+        "admin_action_rejected": "critical",
     }
     timeline_items: list[TimelineEventDto] = []
     for ev in events_db:
@@ -697,7 +710,7 @@ def get_ticket_360_detail(db: Session, ticket_identifier: str) -> TicketDetail36
         )
         if em.thread_type == "ISP":
             isp_emails.append(dto)
-        else:
+        elif em.thread_type in {"BRANCH", "HUMAN_ESCALATION"}:
             branch_emails.append(dto)
 
     prio = ticket.priority if ticket.priority in {"CRITICAL", "HIGH", "MEDIUM", "LOW"} else "HIGH"
@@ -725,6 +738,8 @@ def get_ticket_360_detail(db: Session, ticket_identifier: str) -> TicketDetail36
             f"Welcome mail {'received' if ticket.isp_welcome_received else 'pending'} · "
             f"{ticket.followup_count} chasers sent"
         ),
+        escalation_reason=ticket.escalation_reason,
+        pending_admin_action=ticket.pending_admin_action_json,
         branch={
             "code": sap_code,
             "name": store_name,
@@ -802,6 +817,7 @@ async def create_manual_ticket(
     db.refresh(ticket)
 
     if payload.run_diagnostics and branch is not None:
+        settings_row = ensure_system_settings(db)
         diag_res = await run_and_persist_diagnostics(
             db,
             DualPingTracerouteRequest(
@@ -812,62 +828,73 @@ async def create_manual_ticket(
             ),
             actor_name="AI_AGENT",
         )
+        diag_context = [
+            f"Manual Ticket Created by: {actor.display_name} ({actor.email})",
+            f"Diagnostics Result: {diag_res.result_status} ({diag_res.diagnosis_code})",
+            f"IP1 Up: {diag_res.ip_1_up} | IP2 Up: {diag_res.ip_2_up} | 4G Hub: {diag_res.four_g_hub_detected}",
+        ]
         if diag_res.diagnosis_code in {
             ConnectionFailureType.FULL_OUTAGE.value,
             ConnectionFailureType.LOCAL_LOOP_DOWN_ON_4G.value,
         }:
-            transition_ticket(
-                db,
-                ticket,
-                TicketStatus.ESCALATED_TO_ISP,
-                actor_type="AI_AGENT",
-                actor_name="AI_AGENT",
-                reason=diag_res.diagnosis_code,
-            )
-            ticket.connection_failure_type = diag_res.diagnosis_code
-            ticket.next_followup_at = datetime.now(timezone.utc) + timedelta(minutes=120)
             subj, body, to_list, cc_list, tpl = format_isp_escalation_email(
-                branch, site_contact_phone=ticket.site_contact_phone
+                branch, site_contact_phone=ticket.site_contact_phone, db=db
             )
-            await dispatch_outbound_email(
+            await apply_or_queue_ticket_action(
                 db,
+                settings_row=settings_row,
                 ticket=ticket,
-                thread_type="ISP",
-                recipients=to_list,
-                cc=cc_list,
-                subject=subj,
-                body_text=body,
-                classification_label="ESCALATION",
-                ai_analysis_json={"template": tpl, "thread": "ISP"},
-            )
-            db.add(
-                TicketEvent(
-                    ticket_id=ticket.id,
-                    actor_type="AI_AGENT",
-                    actor_name="AI_AGENT",
-                    event_type="isp_escalated",
-                    summary=f"Escalated to {branch.isp_name}",
-                    details_json={"detail": f"Subject: {subj}"},
-                )
+                branch=branch,
+                action_label="ESCALATED_TO_ISP",
+                summary=f"Escalate manual ticket {ticket.ticket_number} to {branch.isp_name} ({diag_res.diagnosis_code})",
+                target_status=TicketStatus.ESCALATED_TO_ISP,
+                transition_reason=diag_res.diagnosis_code,
+                connection_failure_type=diag_res.diagnosis_code,
+                followup_minutes=settings_row.welcome_sla_minutes or 120,
+                proposed_emails=[
+                    {
+                        "thread_type": "ISP",
+                        "recipients": to_list,
+                        "cc": cc_list,
+                        "subject": subj,
+                        "body_text": body,
+                        "classification_label": "ESCALATION",
+                        "ai_analysis_json": {"template": tpl, "thread": "ISP"},
+                    }
+                ],
+                proposed_events=[
+                    {
+                        "event_type": "isp_escalated",
+                        "summary": f"Escalated to {branch.isp_name}",
+                        "details_json": {"detail": f"Subject: {subj}"},
+                    }
+                ],
+                context_lines=diag_context,
             )
         elif diag_res.diagnosis_code == ConnectionFailureType.INTERNAL_LAN_SWITCH.value:
-            transition_ticket(
+            await apply_or_queue_ticket_action(
                 db,
-                ticket,
-                TicketStatus.INTERNAL_LAN_ISSUE,
-                actor_type="AI_AGENT",
-                actor_name="AI_AGENT",
-                reason=diag_res.diagnosis_code,
+                settings_row=settings_row,
+                ticket=ticket,
+                branch=branch,
+                action_label="INTERNAL_LAN_ISSUE",
+                summary=f"Mark manual ticket {ticket.ticket_number} as INTERNAL_LAN_ISSUE ({diag_res.diagnosis_code})",
+                target_status=TicketStatus.INTERNAL_LAN_ISSUE,
+                transition_reason=diag_res.diagnosis_code,
+                connection_failure_type=diag_res.diagnosis_code,
+                context_lines=diag_context,
             )
-            ticket.connection_failure_type = diag_res.diagnosis_code
         else:
-            transition_ticket(
+            await apply_or_queue_ticket_action(
                 db,
-                ticket,
-                TicketStatus.CLOSED,
-                actor_type="AI_AGENT",
-                actor_name="AI_AGENT",
-                reason="Initial diagnostics passed",
+                settings_row=settings_row,
+                ticket=ticket,
+                branch=branch,
+                action_label="CLOSED_DIAGNOSTICS_PASSED",
+                summary=f"Close manual ticket {ticket.ticket_number} (Initial diagnostics passed)",
+                target_status=TicketStatus.CLOSED,
+                transition_reason="Initial diagnostics passed",
+                context_lines=diag_context,
             )
         db.commit()
         db.refresh(ticket)
@@ -953,6 +980,357 @@ def transition_ticket(
         pass
 
     return ticket
+
+
+async def apply_or_queue_ticket_action(
+    db: Session,
+    *,
+    settings_row: SystemSettings,
+    ticket: Ticket,
+    branch: Optional[Branch],
+    action_label: str,
+    summary: str,
+    target_status: Optional[TicketStatus] = None,
+    transition_reason: str = "",
+    connection_failure_type: Optional[str] = None,
+    isp_welcome_received: Optional[bool] = None,
+    isp_reference_number: Optional[str] = None,
+    followup_minutes: Optional[int] = None,
+    increment_followup_count: bool = False,
+    update_last_isp_contact: bool = False,
+    proposed_emails: Optional[list[dict[str, Any]]] = None,
+    proposed_events: Optional[list[dict[str, Any]]] = None,
+    context_lines: Optional[list[str]] = None,
+    force_transition: bool = False,
+) -> tuple[str, list[TicketEmail], Optional[TicketEmail]]:
+    """Execute an AI agent ticket action or pause for Admin Approval when `require_admin_approval_before_action` is True.
+
+    In both modes, sends an email notification to the configured Admin Notification Email
+    (unless `notify_admin_on_every_action` is False in autonomous mode).
+    """
+    if target_status is not None and ticket.status != target_status.value and not force_transition:
+        assert_transition(ticket.status, target_status)
+
+    details_lines: list[str] = list(context_lines or [])
+    if target_status is not None:
+        details_lines.append(f"Target Ticket Status: {ticket.status} -> {target_status.value}")
+    if connection_failure_type:
+        details_lines.append(f"Failure Classification: {connection_failure_type}")
+    if isp_reference_number:
+        details_lines.append(f"ISP Case Reference: {isp_reference_number}")
+    for idx, em_spec in enumerate(proposed_emails or [], start=1):
+        to_str = ", ".join(em_spec.get("recipients") or [])
+        cc_str = ", ".join(em_spec.get("cc") or [])
+        cc_part = f" | CC: {cc_str}" if cc_str else ""
+        details_lines.append(
+            f"Outbound Email #{idx} [{em_spec.get('thread_type', 'BRANCH')}] -> To: {to_str}{cc_part}"
+        )
+        details_lines.append(f"  Subject: {em_spec.get('subject', '')}")
+        body_preview = (em_spec.get("body_text") or "").strip().replace("\n", "\n    ")
+        details_lines.append(f"  Body:\n    {body_preview}")
+
+    if settings_row.require_admin_approval_before_action and not force_transition:
+        prev_status = str(ticket.status)
+        if connection_failure_type is not None:
+            ticket.connection_failure_type = connection_failure_type
+        if isp_reference_number is not None:
+            ticket.isp_reference_number = isp_reference_number
+
+        ticket.pending_admin_action_json = {
+            "action_label": action_label,
+            "summary": summary,
+            "previous_status": prev_status,
+            "target_status": target_status.value if target_status is not None else None,
+            "transition_reason": transition_reason,
+            "connection_failure_type": connection_failure_type,
+            "isp_welcome_received": isp_welcome_received,
+            "isp_reference_number": isp_reference_number,
+            "followup_minutes": followup_minutes,
+            "increment_followup_count": increment_followup_count,
+            "update_last_isp_contact": update_last_isp_contact,
+            "proposed_emails": list(proposed_emails or []),
+            "proposed_events": list(proposed_events or []),
+            "context_lines": list(context_lines or []),
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if ticket.status != TicketStatus.NEEDS_HUMAN_REVIEW.value:
+            transition_ticket(
+                db,
+                ticket,
+                TicketStatus.NEEDS_HUMAN_REVIEW,
+                actor_type="AI_AGENT",
+                actor_name="AI_AGENT",
+                reason=f"Awaiting admin approval: {action_label}",
+                force=True,
+            )
+        else:
+            ticket.ai_automation_enabled = False
+            ticket.next_followup_at = None
+
+        ticket.escalation_reason = EscalationReason.ADMIN_APPROVAL_REQUIRED.value
+        ticket.human_escalated_to = resolve_admin_notification_email(settings_row)
+        db.add(
+            TicketEvent(
+                ticket_id=ticket.id,
+                actor_type="AI_AGENT",
+                actor_name="AI_AGENT",
+                event_type="admin_approval_requested",
+                summary=f"Paused for Admin Approval · {action_label}",
+                details_json={
+                    "detail": summary,
+                    "action_label": action_label,
+                    "target_status": target_status.value if target_status else prev_status,
+                    "proposed_email_count": len(proposed_emails or []),
+                },
+            )
+        )
+        admin_em = await dispatch_admin_action_email(
+            db,
+            settings_row=settings_row,
+            ticket=ticket,
+            branch=branch,
+            action_label=action_label,
+            action_summary=summary,
+            details_lines=details_lines,
+            approval_required=True,
+        )
+        return ("AWAITING_ADMIN_APPROVAL", [], admin_em)
+
+    if target_status is not None and ticket.status != target_status.value:
+        transition_ticket(
+            db,
+            ticket,
+            target_status,
+            actor_type="AI_AGENT",
+            actor_name="AI_AGENT",
+            reason=transition_reason,
+            force=force_transition,
+        )
+
+    if connection_failure_type is not None:
+        ticket.connection_failure_type = connection_failure_type
+    if isp_welcome_received is not None:
+        ticket.isp_welcome_received = isp_welcome_received
+    if isp_reference_number is not None:
+        ticket.isp_reference_number = isp_reference_number
+
+    sent_emails: list[TicketEmail] = []
+    any_blocked = False
+    for em_spec in proposed_emails or []:
+        em = await dispatch_outbound_email(
+            db,
+            ticket=ticket,
+            thread_type=em_spec.get("thread_type", "BRANCH"),
+            recipients=list(em_spec.get("recipients") or []),
+            cc=list(em_spec.get("cc") or []),
+            branch=branch,
+            subject=em_spec.get("subject", ""),
+            body_text=em_spec.get("body_text", ""),
+            in_reply_to=em_spec.get("in_reply_to"),
+            classification_label=str(em_spec.get("classification_label") or "OUTBOUND"),
+            ai_analysis_json=em_spec.get("ai_analysis_json"),
+        )
+        sent_emails.append(em)
+        if (em.ai_analysis_json or {}).get("blocked_by_loop_guard"):
+            any_blocked = True
+
+    now_utc = datetime.now(timezone.utc)
+    if increment_followup_count and not any_blocked:
+        ticket.followup_count += 1
+    if update_last_isp_contact and not any_blocked:
+        ticket.last_isp_contact_at = now_utc
+    if followup_minutes is not None and ticket.status != TicketStatus.NEEDS_HUMAN_REVIEW.value:
+        if not (increment_followup_count and any_blocked):
+            ticket.next_followup_at = now_utc + timedelta(minutes=followup_minutes)
+
+    if not (increment_followup_count and any_blocked):
+        for ev_spec in proposed_events or []:
+            db.add(
+                TicketEvent(
+                    ticket_id=ticket.id,
+                    actor_type=ev_spec.get("actor_type", "AI_AGENT"),
+                    actor_name=ev_spec.get("actor_name", "AI_AGENT"),
+                    event_type=ev_spec["event_type"],
+                    summary=ev_spec["summary"],
+                    details_json=ev_spec.get("details_json") or {},
+                )
+            )
+
+    admin_em = await dispatch_admin_action_email(
+        db,
+        settings_row=settings_row,
+        ticket=ticket,
+        branch=branch,
+        action_label=action_label,
+        action_summary=summary,
+        details_lines=details_lines,
+        approval_required=False,
+    )
+    return (action_label, sent_emails, admin_em)
+
+
+async def approve_pending_ticket_action(
+    db: Session,
+    ticket_identifier: str,
+    *,
+    actor: User,
+) -> TicketDetail360Response:
+    """Approve and execute the AI agent action queued in `ticket.pending_admin_action_json`."""
+    ticket = get_ticket_by_number_or_id(db, ticket_identifier)
+    pending = dict(ticket.pending_admin_action_json or {})
+    if not pending:
+        raise ValidationError(
+            f"Ticket {ticket.ticket_number} has no pending admin action to approve"
+        )
+
+    branch = db.get(Branch, ticket.branch_id) if ticket.branch_id else None
+    settings_row = ensure_system_settings(db)
+
+    action_label = str(pending.get("action_label") or "AGENT_ACTION")
+    summary = str(pending.get("summary") or f"Approved action {action_label}")
+    effective_target_str = pending.get("target_status") or pending.get("previous_status")
+    effective_target = TicketStatus(effective_target_str) if effective_target_str else None
+
+    ticket.pending_admin_action_json = None
+    ticket.escalation_reason = None
+    if effective_target not in {
+        TicketStatus.NEEDS_HUMAN_REVIEW,
+        TicketStatus.CLOSED,
+        TicketStatus.RESOLVED,
+    }:
+        ticket.ai_automation_enabled = True
+
+    db.add(
+        TicketEvent(
+            ticket_id=ticket.id,
+            actor_type="ENGINEER",
+            actor_name=actor.display_name,
+            event_type="admin_action_approved",
+            summary=f"Admin approved proposed action · {action_label}",
+            details_json={"detail": f"Approved by {actor.display_name}: {summary}"},
+        )
+    )
+
+    context_lines = list(pending.get("context_lines") or [])
+    context_lines.insert(0, f"Approved By: {actor.display_name} ({actor.email})")
+
+    await apply_or_queue_ticket_action(
+        db,
+        settings_row=settings_row,
+        ticket=ticket,
+        branch=branch,
+        action_label=action_label,
+        summary=f"[Admin Approved] {summary}",
+        target_status=effective_target,
+        transition_reason=str(
+            pending.get("transition_reason") or f"Approved by {actor.display_name}"
+        ),
+        connection_failure_type=pending.get("connection_failure_type"),
+        isp_welcome_received=pending.get("isp_welcome_received"),
+        isp_reference_number=pending.get("isp_reference_number"),
+        followup_minutes=pending.get("followup_minutes"),
+        increment_followup_count=bool(pending.get("increment_followup_count", False)),
+        update_last_isp_contact=bool(pending.get("update_last_isp_contact", False)),
+        proposed_emails=list(pending.get("proposed_emails") or []),
+        proposed_events=list(pending.get("proposed_events") or []),
+        context_lines=context_lines,
+        force_transition=True,
+    )
+
+    record_audit_event(
+        db,
+        actor_user_id=actor.id,
+        actor_username=actor.username,
+        action="ticket.admin_action_approved",
+        resource_type="ticket",
+        resource_id=ticket.ticket_number,
+        summary=f"Approved pending AI agent action {action_label} on {ticket.ticket_number}",
+        details={"action_label": action_label, "summary": summary},
+    )
+    db.commit()
+    db.refresh(ticket)
+    return get_ticket_360_detail(db, ticket.ticket_number)
+
+
+async def reject_pending_ticket_action(
+    db: Session,
+    ticket_identifier: str,
+    *,
+    actor: User,
+) -> TicketDetail360Response:
+    """Reject the AI agent action queued in `ticket.pending_admin_action_json` without sending proposed emails."""
+    ticket = get_ticket_by_number_or_id(db, ticket_identifier)
+    pending = dict(ticket.pending_admin_action_json or {})
+    if not pending:
+        raise ValidationError(
+            f"Ticket {ticket.ticket_number} has no pending admin action to reject"
+        )
+
+    branch = db.get(Branch, ticket.branch_id) if ticket.branch_id else None
+    settings_row = ensure_system_settings(db)
+
+    action_label = str(pending.get("action_label") or "AGENT_ACTION")
+    summary = str(pending.get("summary") or f"Rejected action {action_label}")
+    prev_status_str = str(pending.get("previous_status") or TicketStatus.DIAGNOSING.value)
+    if prev_status_str == TicketStatus.NEEDS_HUMAN_REVIEW.value:
+        prev_status_str = TicketStatus.DIAGNOSING.value
+
+    ticket.pending_admin_action_json = None
+    ticket.escalation_reason = None
+    if ticket.status != prev_status_str:
+        transition_ticket(
+            db,
+            ticket,
+            prev_status_str,
+            actor_type="ENGINEER",
+            actor_name=actor.display_name,
+            reason=f"Rejected proposed AI action {action_label}",
+            force=True,
+        )
+    ticket.ai_automation_enabled = False
+    ticket.next_followup_at = None
+
+    db.add(
+        TicketEvent(
+            ticket_id=ticket.id,
+            actor_type="ENGINEER",
+            actor_name=actor.display_name,
+            event_type="admin_action_rejected",
+            summary=f"Admin rejected proposed action · {action_label}",
+            details_json={
+                "detail": f"Rejected by {actor.display_name}; AI paused for manual control"
+            },
+        )
+    )
+
+    await dispatch_admin_action_email(
+        db,
+        settings_row=settings_row,
+        ticket=ticket,
+        branch=branch,
+        action_label="ADMIN_ACTION_REJECTED",
+        action_summary=f"Admin {actor.display_name} rejected proposed action {action_label} on {ticket.ticket_number}",
+        details_lines=[
+            f"Rejected By: {actor.display_name} ({actor.email})",
+            f"Rejected Proposed Action: {action_label} — {summary}",
+            f"Ticket Restored Status: {ticket.status} (AI Automation Paused)",
+        ],
+        approval_required=False,
+    )
+
+    record_audit_event(
+        db,
+        actor_user_id=actor.id,
+        actor_username=actor.username,
+        action="ticket.admin_action_rejected",
+        resource_type="ticket",
+        resource_id=ticket.ticket_number,
+        summary=f"Rejected pending AI agent action {action_label} on {ticket.ticket_number}",
+        details={"action_label": action_label, "summary": summary},
+    )
+    db.commit()
+    db.refresh(ticket)
+    return get_ticket_360_detail(db, ticket.ticket_number)
 
 
 LOOP_GUARD_TRIP_THRESHOLD = 2
@@ -1305,10 +1683,18 @@ def list_human_escalations(db: Session) -> list[EscalationItemDto]:
         branch = db.get(Branch, t.branch_id) if t.branch_id else None
         latest_email = db.execute(
             select(TicketEmail)
-            .where(TicketEmail.ticket_id == t.id)
+            .where(
+                TicketEmail.ticket_id == t.id,
+                TicketEmail.thread_type != "ADMIN_NOTIFICATION",
+            )
             .order_by(TicketEmail.id.desc())
             .limit(1)
         ).scalar_one_or_none()
+        pending_action = dict(t.pending_admin_action_json) if t.pending_admin_action_json else None
+        is_approval_req = (
+            t.escalation_reason == EscalationReason.ADMIN_APPROVAL_REQUIRED.value
+            and pending_action is not None
+        )
         items.append(
             EscalationItemDto(
                 key=f"ticket-{t.id}",
@@ -1317,16 +1703,28 @@ def list_human_escalations(db: Session) -> list[EscalationItemDto]:
                 isp=branch.isp_name if branch else "NOOR",
                 case_ref=t.isp_reference_number,
                 when=t.updated_at.strftime("%d %b %H:%M") if t.updated_at else "—",
-                title=t.title,
+                title=(
+                    f"{t.title} · Proposed: {pending_action.get('action_label')}"
+                    if is_approval_req and pending_action
+                    else t.title
+                ),
                 quote=latest_email.body_text[:220]
                 if latest_email and latest_email.body_text
                 else (t.description or "Escalated to human engineer."),
                 from_addr=latest_email.sender
                 if latest_email
                 else (t.sender_email or "NetOps Agent"),
-                summary=f"Escalated to {t.human_escalated_to or 'noc-oncall@kazyon.com'}.",
+                summary=(
+                    str(
+                        pending_action.get("summary")
+                        or f"Awaiting Admin approval before executing {pending_action.get('action_label')}."
+                    )
+                    if is_approval_req and pending_action
+                    else f"Escalated to {t.human_escalated_to or 'noc-oncall@kazyon.com'}."
+                ),
                 engineer_email=t.human_escalated_to or "noc-oncall@kazyon.com",
-                primary_action="Mark handled",
+                primary_action="Approve & Execute" if is_approval_req else "Mark handled",
+                pending_admin_action=pending_action,
             )
         )
 
@@ -1528,6 +1926,8 @@ CLASSIFICATION_BADGE_TONES: dict[str, str] = {
     "CHASER": "neutral",
     "ISP_CLOSURE": "good",
     "AUTO_SUBMITTED_IGNORED": "neutral",
+    "ADMIN_ACTION_NOTIFICATION": "info",
+    "ADMIN_APPROVAL_REQUEST": "warning",
 }
 
 
@@ -1606,6 +2006,17 @@ def _settings_dto(row: SystemSettings) -> SystemSettingsDto:
     dto.smtp_username = row.smtp_username or smtp_cfg.username
     dto.smtp_credentials_configured = smtp_cfg.credentials_configured
     dto.test_redirect_email = row.test_redirect_email or ""
+    dto.admin_notification_email = row.admin_notification_email or resolve_admin_notification_email(
+        row
+    )
+    dto.notify_admin_on_every_action = bool(
+        row.notify_admin_on_every_action if row.notify_admin_on_every_action is not None else True
+    )
+    dto.require_admin_approval_before_action = bool(
+        row.require_admin_approval_before_action
+        if row.require_admin_approval_before_action is not None
+        else False
+    )
     return dto
 
 
@@ -1642,7 +2053,8 @@ def update_system_settings(
         resource_id="global",
         summary=(
             f"Updated AI Agent, Mailbox & SLA settings ({keys_preview or 'no changes'}; "
-            f"kill_switch={row.global_ai_kill_switch}, smtp_enabled={row.smtp_enabled})"
+            f"kill_switch={row.global_ai_kill_switch}, smtp_enabled={row.smtp_enabled}, "
+            f"ask_before_acting={row.require_admin_approval_before_action})"
         ),
         details={"updated_fields": changed_keys},
         ip_address=ip_address,

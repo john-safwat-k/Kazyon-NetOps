@@ -123,6 +123,8 @@ class TicketDetail360Response(BaseModel):
     sla_minutes_left: int
     sla_total_minutes: int
     sla_summary_text: str
+    escalation_reason: Optional[str] = None
+    pending_admin_action: Optional[dict[str, Any]] = None
     branch: dict[str, Any]
     isp: dict[str, Any]
     vision: dict[str, Any]
@@ -166,12 +168,16 @@ class EscalationItemDto(BaseModel):
     summary: str
     engineer_email: str
     primary_action: str
+    pending_admin_action: Optional[dict[str, Any]] = None
 
 
 class SystemSettingsDto(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     global_ai_kill_switch: bool
+    admin_notification_email: str = "admin@kazyon.com"
+    notify_admin_on_every_action: bool = True
+    require_admin_approval_before_action: bool = False
     mailbox_account: str
     smtp_host: str
     smtp_port: int
@@ -204,6 +210,9 @@ class SystemSettingsUpdateRequest(BaseModel):
     """Partial update for Page 12; omitted fields keep their saved value."""
 
     global_ai_kill_switch: Optional[bool] = None
+    admin_notification_email: Optional[str] = Field(default=None, max_length=255)
+    notify_admin_on_every_action: Optional[bool] = None
+    require_admin_approval_before_action: Optional[bool] = None
     mailbox_account: Optional[str] = Field(default=None, min_length=3, max_length=255)
     smtp_host: Optional[str] = Field(default=None, max_length=255)
     smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)

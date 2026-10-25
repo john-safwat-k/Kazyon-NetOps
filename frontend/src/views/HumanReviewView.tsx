@@ -6,6 +6,7 @@ import { ConsoleViewProps } from "./types";
 
 const ESCALATION_REASONS = [
   "ALL",
+  "ADMIN_APPROVAL_REQUIRED",
   "QUOTA_CONSUMED",
   "MSAN_MIGRATION",
   "INTERNAL_BOX_CABLE",
@@ -28,6 +29,7 @@ export function HumanReviewView({
   const [items, setItems] = useState<EscalationItemDTO[]>([]);
   const [reason, setReason] = useState<string>("ALL");
   const [doneKeys, setDoneKeys] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState<string | null>(null);
 
   const loadItems = useCallback(() => {
     escalationsApi
@@ -45,7 +47,46 @@ export function HumanReviewView({
     (a) => reason === "ALL" || a.reason === reason,
   );
 
+  const handleApproveAction = async (item: EscalationItemDTO) => {
+    if (!item.ticket_number) return;
+    setDoneKeys((prev) => ({ ...prev, [item.key]: true }));
+    try {
+      await ticketsApi.approveAction(item.ticket_number);
+      setToast(
+        `Approved & executed ${
+          item.pending_admin_action?.action_label || "action"
+        } on ${item.ticket_number}.`,
+      );
+      loadItems();
+    } catch {
+      setToast(`Failed to approve action on ${item.ticket_number}.`);
+    }
+  };
+
+  const handleRejectAction = async (item: EscalationItemDTO) => {
+    if (!item.ticket_number) return;
+    setDoneKeys((prev) => ({ ...prev, [item.key]: true }));
+    try {
+      await ticketsApi.rejectAction(item.ticket_number);
+      setToast(
+        `Rejected proposed action on ${item.ticket_number}; AI paused for manual control.`,
+      );
+      loadItems();
+    } catch {
+      setToast(`Failed to reject action on ${item.ticket_number}.`);
+    }
+  };
+
   const handleMarkDone = async (item: EscalationItemDTO, resumeAi = false) => {
+    if (
+      !resumeAi &&
+      item.reason === "ADMIN_APPROVAL_REQUIRED" &&
+      item.pending_admin_action &&
+      item.ticket_number
+    ) {
+      await handleApproveAction(item);
+      return;
+    }
     setDoneKeys((prev) => ({ ...prev, [item.key]: true }));
     if (item.ticket_number) {
       try {
@@ -93,6 +134,22 @@ export function HumanReviewView({
           On duty: <b style={{ color: "var(--ink)" }}>noc-oncall@kazyon.com</b>
         </span>
       </div>
+
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: "var(--info-bg)",
+            color: "var(--info)",
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          {toast}
+        </div>
+      ) : null}
 
       <div className="kz-filters">
         {ESCALATION_REASONS.map((r) => {
@@ -143,7 +200,15 @@ export function HumanReviewView({
                   flexWrap: "wrap",
                 }}
               >
-                <Badge tone="critical">{it.reason}</Badge>
+                <Badge
+                  tone={
+                    it.reason === "ADMIN_APPROVAL_REQUIRED"
+                      ? "warning"
+                      : "critical"
+                  }
+                >
+                  {it.reason}
+                </Badge>
                 {it.ticket_number ? (
                   <a
                     href={`#ticket-${it.ticket_number}`}
@@ -186,6 +251,70 @@ export function HumanReviewView({
               <p style={{ margin: 0, fontSize: 13, lineHeight: "20px" }}>
                 <b>Agent summary:</b> {it.summary}
               </p>
+              {it.pending_admin_action ? (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--warning)",
+                    background: "var(--warning-bg)",
+                    fontSize: 12.5,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: "var(--ink)" }}>
+                    Proposed Action:{" "}
+                    <span className="kz-mono">
+                      {it.pending_admin_action.action_label}
+                    </span>
+                    {it.pending_admin_action.target_status ? (
+                      <span>
+                        {" "}
+                        → Target Status:{" "}
+                        <span className="kz-mono">
+                          {it.pending_admin_action.target_status}
+                        </span>
+                      </span>
+                    ) : null}
+                  </div>
+                  {(it.pending_admin_action.proposed_emails || []).length >
+                  0 ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>
+                        Draft Outbound Emails (
+                        {it.pending_admin_action.proposed_emails?.length}):
+                      </div>
+                      {it.pending_admin_action.proposed_emails?.map(
+                        (em, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              padding: "6px 8px",
+                              borderRadius: 6,
+                              background: "var(--surface-000)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            <div className="kz-mono" style={{ fontSize: 11.5 }}>
+                              [{em.thread_type}] To:{" "}
+                              {(em.recipients || []).join(", ")} · Subject:{" "}
+                              {em.subject}
+                            </div>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="kz-tcard-meta">
                 Report emailed to {it.engineer_email} · AI automation paused on
                 this item
@@ -199,33 +328,65 @@ export function HumanReviewView({
                 gap: 8,
               }}
             >
-              <button
-                type="button"
-                className="kz-btn kz-btn-primary"
-                onClick={() => handleMarkDone(it, false)}
-              >
-                {it.primary_action}
-              </button>
-              <button
-                type="button"
-                className="kz-btn kz-btn-secondary"
-                onClick={() => {
-                  if (it.ticket_number) {
-                    onOpenTicket(it.ticket_number);
-                  } else {
-                    onNavigate("Mailbox & Triage");
-                  }
-                }}
-              >
-                Reply manually
-              </button>
-              <button
-                type="button"
-                className="kz-btn kz-btn-ghost"
-                onClick={() => handleMarkDone(it, true)}
-              >
-                Resume AI automation
-              </button>
+              {it.reason === "ADMIN_APPROVAL_REQUIRED" &&
+              it.pending_admin_action &&
+              it.ticket_number ? (
+                <>
+                  <button
+                    type="button"
+                    className="kz-btn kz-btn-primary"
+                    onClick={() => handleApproveAction(it)}
+                  >
+                    Approve &amp; Execute
+                  </button>
+                  <button
+                    type="button"
+                    className="kz-btn kz-btn-danger"
+                    onClick={() => handleRejectAction(it)}
+                  >
+                    Reject Action
+                  </button>
+                  <button
+                    type="button"
+                    className="kz-btn kz-btn-secondary"
+                    onClick={() => {
+                      if (it.ticket_number) onOpenTicket(it.ticket_number);
+                    }}
+                  >
+                    Inspect Ticket 360°
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="kz-btn kz-btn-primary"
+                    onClick={() => handleMarkDone(it, false)}
+                  >
+                    {it.primary_action}
+                  </button>
+                  <button
+                    type="button"
+                    className="kz-btn kz-btn-secondary"
+                    onClick={() => {
+                      if (it.ticket_number) {
+                        onOpenTicket(it.ticket_number);
+                      } else {
+                        onNavigate("Mailbox & Triage");
+                      }
+                    }}
+                  >
+                    Reply manually
+                  </button>
+                  <button
+                    type="button"
+                    className="kz-btn kz-btn-ghost"
+                    onClick={() => handleMarkDone(it, true)}
+                  >
+                    Resume AI automation
+                  </button>
+                </>
+              )}
             </div>
           </article>
         ))}

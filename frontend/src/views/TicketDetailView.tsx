@@ -179,6 +179,26 @@ export function TicketDetailView({
     }
   };
 
+  const handleApprovePendingAction = async () => {
+    if (!ticket) return;
+    const actionName =
+      ticket.pending_admin_action?.action_label || "pending action";
+    const updated = await ticketsApi.approveAction(ticket.ticket_number);
+    setTicket(updated);
+    setToast(`Approved & executed ${actionName}.`);
+  };
+
+  const handleRejectPendingAction = async () => {
+    if (!ticket) return;
+    const actionName =
+      ticket.pending_admin_action?.action_label || "pending action";
+    const updated = await ticketsApi.rejectAction(ticket.ticket_number);
+    setTicket(updated);
+    setToast(
+      `Rejected proposed action ${actionName}; AI paused for manual control.`,
+    );
+  };
+
   if (!ticket) {
     return (
       <AppShell
@@ -402,6 +422,117 @@ export function TicketDetailView({
         >
           {toast}
         </div>
+      ) : null}
+
+      {ticket.pending_admin_action ? (
+        <section
+          className="kz-card"
+          style={{
+            border: "1.5px solid var(--warning)",
+            background: "var(--warning-bg)",
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Badge tone="warning">ADMIN APPROVAL REQUIRED</Badge>
+                <span className="kz-mono" style={{ fontWeight: 700, fontSize: 13 }}>
+                  {ticket.pending_admin_action.action_label}
+                </span>
+                {ticket.pending_admin_action.target_status ? (
+                  <span style={{ fontSize: 12.5, color: "var(--ink-muted)" }}>
+                    → Target Status:{" "}
+                    <b className="kz-mono">
+                      {ticket.pending_admin_action.target_status}
+                    </b>
+                  </span>
+                ) : null}
+              </div>
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: "var(--ink)",
+                }}
+              >
+                {ticket.pending_admin_action.summary}
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="kz-btn kz-btn-primary"
+                onClick={handleApprovePendingAction}
+              >
+                Approve &amp; Execute Action
+              </button>
+              <button
+                type="button"
+                className="kz-btn kz-btn-danger"
+                onClick={handleRejectPendingAction}
+              >
+                Reject Action
+              </button>
+            </div>
+          </div>
+
+          {(ticket.pending_admin_action.proposed_emails || []).length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700 }}>
+                Draft Outbound Emails Pending Approval (
+                {ticket.pending_admin_action.proposed_emails?.length}):
+              </div>
+              {ticket.pending_admin_action.proposed_emails?.map((em, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--surface-000)",
+                    border: "1px solid var(--border)",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <div
+                    className="kz-mono"
+                    style={{ fontWeight: 600, marginBottom: 4 }}
+                  >
+                    [{em.thread_type}] To: {(em.recipients || []).join(", ")}
+                    {em.cc && em.cc.length > 0
+                      ? ` · CC: ${em.cc.join(", ")}`
+                      : ""}
+                  </div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                    Subject: {em.subject}
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      whiteSpace: "pre-wrap",
+                      font: "400 12px var(--font-sans)",
+                      color: "var(--ink-muted)",
+                    }}
+                  >
+                    {em.body_text}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {escOpen ? (

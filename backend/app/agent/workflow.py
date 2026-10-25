@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional, cast
 from uuid import uuid4
 
@@ -49,6 +49,7 @@ from app.email_engine.parser import (
     relocate_attachments_to_ticket,
 )
 from app.email_engine.smtp_sender import (
+    dispatch_admin_action_email,
     dispatch_outbound_email,
     format_isp_escalation_email,
     resolve_branch_regional_it_cc,
@@ -64,6 +65,7 @@ from app.ticketing.models import (
 )
 from app.ticketing.service import (
     apply_loop_guard_trip,
+    apply_or_queue_ticket_action,
     ensure_operational_seed_data,
     ensure_system_settings,
     transition_ticket,
@@ -395,6 +397,7 @@ async def process_replication_dashboard_report(
                 notified_count += 1
                 reg_it_display = reg_it
                 if not dry_run and branch is not None:
+                    settings_row = ensure_system_settings(db)
                     t_num = _next_ticket_number(db)
                     new_t = Ticket(
                         ticket_number=t_num,
@@ -414,31 +417,42 @@ async def process_replication_dashboard_report(
                     linked_ticket_id = new_t.id
                     created_ticket_numbers.append(new_t.ticket_number)
 
-                    await dispatch_outbound_email(
+                    await apply_or_queue_ticket_action(
                         db,
+                        settings_row=settings_row,
                         ticket=new_t,
-                        thread_type="BRANCH",
-                        recipients=[reg_it],
-                        cc=resolve_branch_regional_it_cc(branch, db=db),
                         branch=branch,
-                        subject=f"[{new_t.ticket_number}] Store {branch.name} Not Updated in Replication Dashboard",
-                        body_text=(
-                            f"Dear Regional IT ({branch.region}),\n"
-                            f"Store {branch.name} is listed as 'Not Updated' in {subject} "
-                            f"(Last transaction: {r['last_trans_raw']}).\n"
-                            "Kindly inspect the store router and reply with a router photo and active site contact phone."
-                        ),
-                        classification_label="REGIONAL_IT_NOTIFY",
-                    )
-                    db.add(
-                        TicketEvent(
-                            ticket_id=new_t.id,
-                            actor_type="AI_AGENT",
-                            actor_name="AI_AGENT",
-                            event_type="regional_it_notified",
-                            summary=f"Notified Regional IT ({reg_it})",
-                            details_json={"detail": f"From {subject}"},
-                        )
+                        action_label="REGIONAL_IT_NOTIFIED_FROM_REPLICATION",
+                        summary=f"Notify Regional IT ({reg_it}) that store {branch.name} is 'Not Updated' in {subject}",
+                        target_status=TicketStatus.AWAITING_REGIONAL_IT,
+                        transition_reason=f"Replication Dashboard Not Updated ({subject})",
+                        proposed_emails=[
+                            {
+                                "thread_type": "BRANCH",
+                                "recipients": [reg_it],
+                                "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                "subject": f"[{new_t.ticket_number}] Store {branch.name} Not Updated in Replication Dashboard",
+                                "body_text": (
+                                    f"Dear Regional IT ({branch.region}),\n"
+                                    f"Store {branch.name} is listed as 'Not Updated' in {subject} "
+                                    f"(Last transaction: {r['last_trans_raw']}).\n"
+                                    "Kindly inspect the store router and reply with a router photo and active site contact phone."
+                                ),
+                                "classification_label": "REGIONAL_IT_NOTIFY",
+                            }
+                        ],
+                        proposed_events=[
+                            {
+                                "event_type": "regional_it_notified",
+                                "summary": f"Notified Regional IT ({reg_it})",
+                                "details_json": {"detail": f"From {subject}"},
+                            }
+                        ],
+                        context_lines=[
+                            f"Replication Report Subject: {subject}",
+                            f"Store: {branch.name} (SAP {branch.branch_code})",
+                            f"Last Transaction: {r['last_trans_raw']} | Business Date: {r['business_date']}",
+                        ],
                     )
                 else:
                     linked_ticket_num = "NET-PREVIEW"
@@ -870,6 +884,8 @@ async def ingest_and_triage_eml(
     db.add(inbound_row)
     db.flush()
 
+    admin_notification_sent: Optional[dict[str, Any]] = None
+
     def _record_outbound(em: TicketEmail) -> None:
         outbound_emails_sent.append(
             {
@@ -886,6 +902,26 @@ async def ingest_and_triage_eml(
                 ),
             }
         )
+
+    def _record_admin_notification(em: Optional[TicketEmail]) -> None:
+        nonlocal admin_notification_sent
+        if em is not None:
+            admin_notification_sent = {
+                "id": em.id,
+                "thread_type": em.thread_type,
+                "to": ", ".join(em.recipients or []),
+                "subject": em.subject,
+                "classification_label": em.classification_label,
+                "message_id": em.message_id,
+            }
+
+    base_context_lines = [
+        f"Inbound Email From: {envelope.sender}",
+        f"Inbound Subject: {envelope.subject}",
+        f"Correlation Method: {correlation_method}",
+        f"AI Classification: {triage.classification_label} (intent={triage.intent}, confidence={triage.confidence:.2f})",
+        f"AI Summary: {triage.summary}",
+    ]
 
     # Execute autonomous workflow unless Global Kill-Switch or Ticket AI Pause is active
     if not settings_row.global_ai_kill_switch and (
@@ -938,26 +974,17 @@ async def ingest_and_triage_eml(
                         and not envelope.attachments
                     )
                 ):
-                    if linked_ticket.status == TicketStatus.AWAITING_BRANCH_CONTACT.value:
-                        transition_ticket(
-                            db,
-                            linked_ticket,
-                            TicketStatus.ESCALATED_TO_ISP,
-                            reason="Regional IT supplied active site contact phone",
-                        )
-                    elif (
+                    if linked_ticket.status not in {
+                        TicketStatus.AWAITING_BRANCH_CONTACT.value,
+                        TicketStatus.ESCALATED_TO_ISP.value,
+                    } or (
                         linked_ticket.status == TicketStatus.ESCALATED_TO_ISP.value
-                        and awaiting_phone_flag
+                        and not awaiting_phone_flag
                     ):
-                        pass
-                    else:
                         raise InvalidStateTransitionError(
                             f"Illegal ticket state transition: {linked_ticket.status} -> {TicketStatus.ESCALATED_TO_ISP.value} (contact relay only valid from AWAITING_BRANCH_CONTACT)"
                         )
 
-                    linked_ticket.next_followup_at = datetime.now(timezone.utc) + timedelta(
-                        minutes=settings_row.followup_interval_minutes
-                    )
                     isp_to, isp_cc = resolve_isp_recipients(branch, db=db)
                     case_str = linked_ticket.isp_reference_number or "open"
                     relay_subj = (
@@ -969,54 +996,81 @@ async def ingest_and_triage_eml(
                         f"Site contact: {linked_ticket.site_contact_phone}\n"
                         f"Kindly call the site contact and resume investigation on Case {case_str}."
                     )
-                    out_em = await dispatch_outbound_email(
+                    act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                         db,
+                        settings_row=settings_row,
                         ticket=linked_ticket,
-                        thread_type="ISP",
-                        recipients=isp_to,
-                        cc=isp_cc,
-                        subject=relay_subj,
-                        body_text=relay_body,
-                        classification_label="CONTACT_RELAY_TO_ISP",
+                        branch=branch,
+                        action_label="RELAYED_CONTACT_TO_ISP",
+                        summary=f"Relay active site contact ({linked_ticket.site_contact_phone}) to {branch.isp_name} on Case {case_str}",
+                        target_status=TicketStatus.ESCALATED_TO_ISP,
+                        transition_reason="Regional IT supplied active site contact phone",
+                        followup_minutes=settings_row.followup_interval_minutes,
+                        proposed_emails=[
+                            {
+                                "thread_type": "ISP",
+                                "recipients": isp_to,
+                                "cc": isp_cc,
+                                "subject": relay_subj,
+                                "body_text": relay_body,
+                                "classification_label": "CONTACT_RELAY_TO_ISP",
+                            }
+                        ],
+                        proposed_events=[
+                            {
+                                "event_type": "contact_relayed",
+                                "summary": f"Relayed active site contact ({linked_ticket.site_contact_phone}) to {branch.isp_name}",
+                                "details_json": {"detail": f"To {isp_to[0]} · Case {case_str}"},
+                            }
+                        ],
+                        context_lines=base_context_lines
+                        + [f"Site Contact Phone: {linked_ticket.site_contact_phone}"],
                     )
-                    _record_outbound(out_em)
-                    db.add(
-                        TicketEvent(
-                            ticket_id=linked_ticket.id,
-                            actor_type="AI_AGENT",
-                            actor_name="AI_AGENT",
-                            event_type="contact_relayed",
-                            summary=f"Relayed active site contact ({linked_ticket.site_contact_phone}) to {branch.isp_name}",
-                            details_json={"detail": f"To {isp_to[0]} · Case {case_str}"},
+                    for em in sent_ems:
+                        _record_outbound(em)
+                    _record_admin_notification(admin_em)
+                    action_label = act_status
+                    if act_status == "AWAITING_ADMIN_APPROVAL":
+                        actions_taken.append(
+                            f"Paused for Admin Approval before relaying site contact ({linked_ticket.site_contact_phone}) to {branch.isp_name}"
                         )
-                    )
-                    action_label = "RELAYED_CONTACT_TO_ISP"
-                    actions_taken.append(
-                        f"Relayed active site phone ({linked_ticket.site_contact_phone}) to {branch.isp_name} on ISP thread"
-                    )
+                    else:
+                        actions_taken.append(
+                            f"Relayed active site phone ({linked_ticket.site_contact_phone}) to {branch.isp_name} on ISP thread"
+                        )
 
                 # Case B2: Regional IT / Branch explicitly confirmed link is restored
                 elif triage.intent == "BRANCH_RESOLUTION_CONFIRMED":
-                    transition_ticket(
+                    act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                         db,
-                        linked_ticket,
-                        TicketStatus.CLOSED,
-                        reason="Branch / Regional IT confirmed link restoration",
+                        settings_row=settings_row,
+                        ticket=linked_ticket,
+                        branch=branch,
+                        action_label="CLOSED_BY_BRANCH_CONFIRMATION",
+                        summary=f"Close ticket {linked_ticket.ticket_number} upon Branch / Regional IT link restoration confirmation",
+                        target_status=TicketStatus.CLOSED,
+                        transition_reason="Branch / Regional IT confirmed link restoration",
+                        proposed_events=[
+                            {
+                                "event_type": "ticket_closed",
+                                "summary": "Branch / Regional IT confirmed link restoration; ticket closed",
+                                "details_json": {"detail": f"Confirmed by {envelope.sender}"},
+                            }
+                        ],
+                        context_lines=base_context_lines,
                     )
-                    db.add(
-                        TicketEvent(
-                            ticket_id=linked_ticket.id,
-                            actor_type="AI_AGENT",
-                            actor_name="AI_AGENT",
-                            event_type="ticket_closed",
-                            summary="Branch / Regional IT confirmed link restoration; ticket closed",
-                            details_json={"detail": f"Confirmed by {envelope.sender}"},
+                    for em in sent_ems:
+                        _record_outbound(em)
+                    _record_admin_notification(admin_em)
+                    action_label = act_status
+                    if act_status == "AWAITING_ADMIN_APPROVAL":
+                        actions_taken.append(
+                            "Paused for Admin Approval before closing ticket upon Branch restoration confirmation"
                         )
-                    )
-                    action_label = "CLOSED_BY_BRANCH_CONFIRMATION"
-                    actions_taken.append(
-                        "Closed ticket upon Branch / Regional IT restoration confirmation"
-                    )
+                    else:
+                        actions_taken.append(
+                            "Closed ticket upon Branch / Regional IT restoration confirmation"
+                        )
 
                 # Case B3: Initial incident report or Regional IT reply with router photo (or cable fix)
                 else:
@@ -1075,45 +1129,52 @@ async def ingest_and_triage_eml(
                         )
 
                     if vision is not None and not vision.cables_plugged:
-                        transition_ticket(
+                        act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                             db,
-                            linked_ticket,
-                            TicketStatus.AWAITING_BRANCH,
-                            reason="Vision check detected unplugged/loose cables",
-                        )
-                        linked_ticket.connection_failure_type = (
-                            ConnectionFailureType.CABLE_UNPLUGGED.value
-                        )
-                        out_em = await dispatch_outbound_email(
-                            db,
+                            settings_row=settings_row,
                             ticket=linked_ticket,
-                            thread_type="BRANCH",
-                            recipients=[envelope.sender],
-                            cc=resolve_branch_regional_it_cc(branch, db=db),
                             branch=branch,
-                            subject=f"RE: {envelope.subject}",
-                            body_text=(
-                                "Router photo check detected loose/unplugged cables or dark power LED. "
-                                "Kindly verify physical cabling and send a fresh photo."
-                            ),
-                            in_reply_to=envelope.message_id,
-                            classification_label="CABLE_FIX_REQUEST",
+                            action_label="REQUESTED_CABLE_RESEAT",
+                            summary=f"Vision check detected unplugged/loose cables ({vision.summary}); request cable reseat from {envelope.sender}",
+                            target_status=TicketStatus.AWAITING_BRANCH,
+                            transition_reason="Vision check detected unplugged/loose cables",
+                            connection_failure_type=ConnectionFailureType.CABLE_UNPLUGGED.value,
+                            proposed_emails=[
+                                {
+                                    "thread_type": "BRANCH",
+                                    "recipients": [envelope.sender],
+                                    "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                    "subject": f"RE: {envelope.subject}",
+                                    "body_text": (
+                                        "Router photo check detected loose/unplugged cables or dark power LED. "
+                                        "Kindly verify physical cabling and send a fresh photo."
+                                    ),
+                                    "in_reply_to": envelope.message_id,
+                                    "classification_label": "CABLE_FIX_REQUEST",
+                                }
+                            ],
+                            proposed_events=[
+                                {
+                                    "event_type": "vision_failed",
+                                    "summary": "Vision check detected unplugged/loose cables; requested reseat",
+                                    "details_json": {"detail": vision.summary},
+                                }
+                            ],
+                            context_lines=base_context_lines
+                            + [f"Vision Verdict: FAIL (cables_plugged=False) — {vision.summary}"],
                         )
-                        _record_outbound(out_em)
-                        db.add(
-                            TicketEvent(
-                                ticket_id=linked_ticket.id,
-                                actor_type="AI_AGENT",
-                                actor_name="AI_AGENT",
-                                event_type="vision_failed",
-                                summary="Vision check detected unplugged/loose cables; requested reseat",
-                                details_json={"detail": vision.summary},
+                        for em in sent_ems:
+                            _record_outbound(em)
+                        _record_admin_notification(admin_em)
+                        action_label = act_status
+                        if act_status == "AWAITING_ADMIN_APPROVAL":
+                            actions_taken.append(
+                                "Vision detected unplugged cables; paused for Admin Approval before emailing Regional IT"
                             )
-                        )
-                        action_label = "REQUESTED_CABLE_RESEAT"
-                        actions_taken.append(
-                            "Vision detected unplugged cables; emailed Regional IT to reseat & send fresh photo"
-                        )
+                        else:
+                            actions_taken.append(
+                                "Vision detected unplugged cables; emailed Regional IT to reseat & send fresh photo"
+                            )
                     else:
                         if vision is not None:
                             db.add(
@@ -1198,6 +1259,18 @@ async def ingest_and_triage_eml(
                                 classification_label="HUMAN_ESCALATION",
                             )
                             _record_outbound(hum_diag)
+                            admin_em = await dispatch_admin_action_email(
+                                db,
+                                settings_row=settings_row,
+                                ticket=linked_ticket,
+                                branch=branch,
+                                action_label="HUMAN_ESCALATED_DIAGNOSTICS_UNAVAILABLE",
+                                action_summary=f"ICMP diagnostics unavailable ({diag_err}); escalated ticket {linked_ticket.ticket_number} to {fallback_engineer}",
+                                details_lines=base_context_lines
+                                + [f"Diagnostic Error: {diag_err}"],
+                                approval_required=False,
+                            )
+                            _record_admin_notification(admin_em)
                             action_label = "HUMAN_ESCALATED_DIAGNOSTICS_UNAVAILABLE"
                             actions_taken.append(
                                 f"Diagnostics failed ({diag_err}); escalated to {fallback_engineer}"
@@ -1208,168 +1281,203 @@ async def ingest_and_triage_eml(
                             actions_taken.append(
                                 f"Executed Dual-Ping + Traceroute → {diag_res.diagnosis_code} ({diag_res.summary})"
                             )
+                            diag_context = base_context_lines + [
+                                f"Vision Check: {linked_ticket.image_analysis_summary}",
+                                f"Diagnostics Diagnosis: {diag_res.diagnosis_code} ({diag_res.summary})",
+                                (
+                                    f"IP1 ({branch.ip_1}): {'UP' if diag_res.ip_1_up else 'DOWN'} | "
+                                    f"IP2 ({branch.ip_2}): {'SKIPPED' if diag_res.ip_2_up is None else ('UP' if diag_res.ip_2_up else 'DOWN')} | "
+                                    f"4G Hub: {bool(diag_res.four_g_hub_detected)}"
+                                ),
+                            ]
                             if diag_res.diagnosis_code in {
                                 ConnectionFailureType.FULL_OUTAGE.value,
                                 ConnectionFailureType.LOCAL_LOOP_DOWN_ON_4G.value,
                             }:
-                                transition_ticket(
-                                    db,
-                                    linked_ticket,
-                                    TicketStatus.ESCALATED_TO_ISP,
-                                    reason=f"Diagnostics detected {diag_res.diagnosis_code}",
-                                )
-                                linked_ticket.connection_failure_type = diag_res.diagnosis_code
-                                linked_ticket.last_isp_contact_at = datetime.now(timezone.utc)
-                                linked_ticket.next_followup_at = datetime.now(
-                                    timezone.utc
-                                ) + timedelta(minutes=settings_row.welcome_sla_minutes)
                                 subj, body, to_list, cc_list, tpl = format_isp_escalation_email(
-                                    branch, site_contact_phone=linked_ticket.site_contact_phone
+                                    branch,
+                                    site_contact_phone=linked_ticket.site_contact_phone,
+                                    db=db,
                                 )
-                                isp_out = await dispatch_outbound_email(
-                                    db,
-                                    ticket=linked_ticket,
-                                    thread_type="ISP",
-                                    recipients=to_list,
-                                    cc=cc_list,
-                                    subject=subj,
-                                    body_text=body,
-                                    classification_label="ESCALATION",
-                                    ai_analysis_json={"template": tpl, "thread": "ISP"},
-                                )
-                                _record_outbound(isp_out)
-
-                                branch_ack = await dispatch_outbound_email(
-                                    db,
-                                    ticket=linked_ticket,
-                                    thread_type="BRANCH",
-                                    recipients=[envelope.sender],
-                                    cc=resolve_branch_regional_it_cc(branch, db=db),
-                                    branch=branch,
-                                    subject=f"RE: {envelope.subject}",
-                                    body_text=(
-                                        f"Router photo verified and automated network diagnostics completed for store {branch.name} "
-                                        f"({diag_res.diagnosis_code}: IP1={'UP' if diag_res.ip_1_up else 'DOWN'}, "
-                                        f"IP2={'SKIPPED' if diag_res.ip_2_up is None else ('UP' if diag_res.ip_2_up else 'DOWN')}).\n"
-                                        f"Ticket {linked_ticket.ticket_number} has been escalated to {branch.isp_name} ({to_list[0]}) "
-                                        f"and is now tracking the {settings_row.welcome_sla_minutes}-minute Welcome SLA."
-                                    ),
-                                    in_reply_to=envelope.message_id,
-                                    classification_label="BRANCH_ACK_ESCALATED",
-                                )
-                                _record_outbound(branch_ack)
-                                db.add(
-                                    TicketEvent(
-                                        ticket_id=linked_ticket.id,
-                                        actor_type="AI_AGENT",
-                                        actor_name="AI_AGENT",
-                                        event_type="isp_escalated",
-                                        summary=f"Escalated {diag_res.diagnosis_code} to {branch.isp_name} ({tpl})",
-                                        details_json={
+                                proposed_emails_list: list[dict[str, Any]] = [
+                                    {
+                                        "thread_type": "ISP",
+                                        "recipients": to_list,
+                                        "cc": cc_list,
+                                        "subject": subj,
+                                        "body_text": body,
+                                        "classification_label": "ESCALATION",
+                                        "ai_analysis_json": {"template": tpl, "thread": "ISP"},
+                                    },
+                                    {
+                                        "thread_type": "BRANCH",
+                                        "recipients": [envelope.sender],
+                                        "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                        "subject": f"RE: {envelope.subject}",
+                                        "body_text": (
+                                            f"Router photo verified and automated network diagnostics completed for store {branch.name} "
+                                            f"({diag_res.diagnosis_code}: IP1={'UP' if diag_res.ip_1_up else 'DOWN'}, "
+                                            f"IP2={'SKIPPED' if diag_res.ip_2_up is None else ('UP' if diag_res.ip_2_up else 'DOWN')}).\n"
+                                            f"Ticket {linked_ticket.ticket_number} has been escalated to {branch.isp_name} ({to_list[0]}) "
+                                            f"and is now tracking the {settings_row.welcome_sla_minutes}-minute Welcome SLA."
+                                        ),
+                                        "in_reply_to": envelope.message_id,
+                                        "classification_label": "BRANCH_ACK_ESCALATED",
+                                    },
+                                ]
+                                proposed_events_list: list[dict[str, Any]] = [
+                                    {
+                                        "event_type": "isp_escalated",
+                                        "summary": f"Escalated {diag_res.diagnosis_code} to {branch.isp_name} ({tpl})",
+                                        "details_json": {
                                             "detail": f"To {to_list[0]} · Subject: {subj}"
                                         },
-                                    )
-                                )
+                                    }
+                                ]
                                 if not linked_ticket.site_contact_phone:
-                                    phone_req_out = await dispatch_outbound_email(
-                                        db,
-                                        ticket=linked_ticket,
-                                        thread_type="BRANCH",
-                                        recipients=[envelope.sender],
-                                        cc=resolve_branch_regional_it_cc(branch, db=db),
-                                        branch=branch,
-                                        subject=f"ACTION [{linked_ticket.ticket_number}]: Active site phone needed for {branch.name}",
-                                        body_text=(
-                                            f"We have immediately escalated store {branch.name} (SAP {branch.branch_code}) "
-                                            f"to {branch.isp_name} NOC so outage resolution is not delayed.\n"
-                                            "However, no site contact phone number was found in your email. "
-                                            "Kindly reply with an active phone number on site so we can forward it to the ISP."
-                                        ),
-                                        in_reply_to=envelope.message_id,
-                                        classification_label="SITE_PHONE_REQUEST",
+                                    proposed_emails_list.append(
+                                        {
+                                            "thread_type": "BRANCH",
+                                            "recipients": [envelope.sender],
+                                            "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                            "subject": f"ACTION [{linked_ticket.ticket_number}]: Active site phone needed for {branch.name}",
+                                            "body_text": (
+                                                f"We have immediately escalated store {branch.name} (SAP {branch.branch_code}) "
+                                                f"to {branch.isp_name} NOC so outage resolution is not delayed.\n"
+                                                "However, no site contact phone number was found in your email. "
+                                                "Kindly reply with an active phone number on site so we can forward it to the ISP."
+                                            ),
+                                            "in_reply_to": envelope.message_id,
+                                            "classification_label": "SITE_PHONE_REQUEST",
+                                        }
                                     )
-                                    _record_outbound(phone_req_out)
-                                    db.add(
-                                        TicketEvent(
-                                            ticket_id=linked_ticket.id,
-                                            actor_type="AI_AGENT",
-                                            actor_name="AI_AGENT",
-                                            event_type="awaiting_site_phone",
-                                            summary="Escalated without site phone; requested active phone from branch",
-                                            details_json={"awaiting_site_phone": True},
-                                        )
+                                    proposed_events_list.append(
+                                        {
+                                            "event_type": "awaiting_site_phone",
+                                            "summary": "Escalated without site phone; requested active phone from branch",
+                                            "details_json": {"awaiting_site_phone": True},
+                                        }
                                     )
-                                    actions_taken.append(
-                                        "Requested missing site contact phone from branch while escalating immediately"
-                                    )
-                                action_label = f"ESCALATED_TO_{branch.isp_name}"
-                                actions_taken.append(
-                                    f"Escalated to {branch.isp_name} ({to_list[0]}) and notified {envelope.sender}"
+
+                                act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
+                                    db,
+                                    settings_row=settings_row,
+                                    ticket=linked_ticket,
+                                    branch=branch,
+                                    action_label=f"ESCALATED_TO_{branch.isp_name}",
+                                    summary=(
+                                        f"Escalate {diag_res.diagnosis_code} on store {branch.name} to {branch.isp_name} ({to_list[0]}) "
+                                        f"and send acknowledgement to {envelope.sender}"
+                                    ),
+                                    target_status=TicketStatus.ESCALATED_TO_ISP,
+                                    transition_reason=f"Diagnostics detected {diag_res.diagnosis_code}",
+                                    connection_failure_type=diag_res.diagnosis_code,
+                                    followup_minutes=settings_row.welcome_sla_minutes,
+                                    update_last_isp_contact=True,
+                                    proposed_emails=proposed_emails_list,
+                                    proposed_events=proposed_events_list,
+                                    context_lines=diag_context,
                                 )
+                                for em in sent_ems:
+                                    _record_outbound(em)
+                                _record_admin_notification(admin_em)
+                                action_label = act_status
+                                if act_status == "AWAITING_ADMIN_APPROVAL":
+                                    actions_taken.append(
+                                        f"Paused for Admin Approval before escalating {diag_res.diagnosis_code} to {branch.isp_name}"
+                                    )
+                                else:
+                                    if not linked_ticket.site_contact_phone:
+                                        actions_taken.append(
+                                            "Requested missing site contact phone from branch while escalating immediately"
+                                        )
+                                    actions_taken.append(
+                                        f"Escalated to {branch.isp_name} ({to_list[0]}) and notified {envelope.sender}"
+                                    )
                             elif (
                                 diag_res.diagnosis_code
                                 == ConnectionFailureType.INTERNAL_LAN_SWITCH.value
                             ):
-                                transition_ticket(
+                                act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                                     db,
-                                    linked_ticket,
-                                    TicketStatus.INTERNAL_LAN_ISSUE,
-                                    reason="IP1 UP, IP2 DOWN (internal LAN switch issue)",
-                                )
-                                linked_ticket.connection_failure_type = diag_res.diagnosis_code
-                                lan_out = await dispatch_outbound_email(
-                                    db,
+                                    settings_row=settings_row,
                                     ticket=linked_ticket,
-                                    thread_type="BRANCH",
-                                    recipients=[envelope.sender],
-                                    cc=resolve_branch_regional_it_cc(branch, db=db),
                                     branch=branch,
-                                    subject=f"RE: {envelope.subject}",
-                                    body_text=(
-                                        f"Automated Dual-Ping for store {branch.name} shows Router IP1 ({branch.ip_1}) is UP "
-                                        f"on primary MPLS, but LAN Switch IP2 ({branch.ip_2}) is DOWN.\n"
-                                        "This indicates an internal LAN switch or patch cord issue rather than an ISP WAN outage. "
-                                        "Kindly inspect the store switch power and uplink port."
-                                    ),
-                                    in_reply_to=envelope.message_id,
-                                    classification_label="INTERNAL_SWITCH_ALERT",
+                                    action_label="RETURNED_TO_BRANCH_INTERNAL_SWITCH",
+                                    summary=f"Return ticket {linked_ticket.ticket_number} to Branch/Regional IT (IP1 UP, IP2 DOWN internal LAN switch issue)",
+                                    target_status=TicketStatus.INTERNAL_LAN_ISSUE,
+                                    transition_reason="IP1 UP, IP2 DOWN (internal LAN switch issue)",
+                                    connection_failure_type=diag_res.diagnosis_code,
+                                    proposed_emails=[
+                                        {
+                                            "thread_type": "BRANCH",
+                                            "recipients": [envelope.sender],
+                                            "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                            "subject": f"RE: {envelope.subject}",
+                                            "body_text": (
+                                                f"Automated Dual-Ping for store {branch.name} shows Router IP1 ({branch.ip_1}) is UP "
+                                                f"on primary MPLS, but LAN Switch IP2 ({branch.ip_2}) is DOWN.\n"
+                                                "This indicates an internal LAN switch or patch cord issue rather than an ISP WAN outage. "
+                                                "Kindly inspect the store switch power and uplink port."
+                                            ),
+                                            "in_reply_to": envelope.message_id,
+                                            "classification_label": "INTERNAL_SWITCH_ALERT",
+                                        }
+                                    ],
+                                    context_lines=diag_context,
                                 )
-                                _record_outbound(lan_out)
-                                action_label = "RETURNED_TO_BRANCH_INTERNAL_SWITCH"
-                                actions_taken.append(
-                                    "Detected internal LAN switch issue (IP1 UP, IP2 DOWN); notified Regional IT"
-                                )
+                                for em in sent_ems:
+                                    _record_outbound(em)
+                                _record_admin_notification(admin_em)
+                                action_label = act_status
+                                if act_status == "AWAITING_ADMIN_APPROVAL":
+                                    actions_taken.append(
+                                        "Detected internal LAN switch issue (IP1 UP, IP2 DOWN); paused for Admin Approval"
+                                    )
+                                else:
+                                    actions_taken.append(
+                                        "Detected internal LAN switch issue (IP1 UP, IP2 DOWN); notified Regional IT"
+                                    )
                             else:
-                                transition_ticket(
+                                act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                                     db,
-                                    linked_ticket,
-                                    TicketStatus.CLOSED,
-                                    reason="Both IP1 & IP2 reachable on primary link",
-                                )
-                                linked_ticket.connection_failure_type = (
-                                    ConnectionFailureType.PASS.value
-                                )
-                                pass_out = await dispatch_outbound_email(
-                                    db,
+                                    settings_row=settings_row,
                                     ticket=linked_ticket,
-                                    thread_type="BRANCH",
-                                    recipients=[envelope.sender],
-                                    cc=resolve_branch_regional_it_cc(branch, db=db),
                                     branch=branch,
-                                    subject=f"RE: {envelope.subject}",
-                                    body_text=(
-                                        f"Automated Dual-Ping & Traceroute for store {branch.name} passed "
-                                        f"(IP1 {branch.ip_1} UP, IP2 {branch.ip_2} UP on primary link). "
-                                        f"Closing ticket {linked_ticket.ticket_number}."
-                                    ),
-                                    in_reply_to=envelope.message_id,
-                                    classification_label="DIAGNOSTICS_PASS_NOTICE",
+                                    action_label="CLOSED_DIAGNOSTICS_PASSED",
+                                    summary=f"Close ticket {linked_ticket.ticket_number} and notify {envelope.sender} (Both IP1 & IP2 reachable on primary link)",
+                                    target_status=TicketStatus.CLOSED,
+                                    transition_reason="Both IP1 & IP2 reachable on primary link",
+                                    connection_failure_type=ConnectionFailureType.PASS.value,
+                                    proposed_emails=[
+                                        {
+                                            "thread_type": "BRANCH",
+                                            "recipients": [envelope.sender],
+                                            "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                            "subject": f"RE: {envelope.subject}",
+                                            "body_text": (
+                                                f"Automated Dual-Ping & Traceroute for store {branch.name} passed "
+                                                f"(IP1 {branch.ip_1} UP, IP2 {branch.ip_2} UP on primary link). "
+                                                f"Closing ticket {linked_ticket.ticket_number}."
+                                            ),
+                                            "in_reply_to": envelope.message_id,
+                                            "classification_label": "DIAGNOSTICS_PASS_NOTICE",
+                                        }
+                                    ],
+                                    context_lines=diag_context,
                                 )
-                                _record_outbound(pass_out)
-                                action_label = "CLOSED_DIAGNOSTICS_PASSED"
-                                actions_taken.append(
-                                    "Both IP1 & IP2 reachable on primary link; closed ticket"
-                                )
+                                for em in sent_ems:
+                                    _record_outbound(em)
+                                _record_admin_notification(admin_em)
+                                action_label = act_status
+                                if act_status == "AWAITING_ADMIN_APPROVAL":
+                                    actions_taken.append(
+                                        "Both IP1 & IP2 reachable on primary link; paused for Admin Approval before closing"
+                                    )
+                                else:
+                                    actions_taken.append(
+                                        "Both IP1 & IP2 reachable on primary link; closed ticket"
+                                    )
 
             elif triage.trigger_type == "ISP_REPLY" and linked_ticket is not None:
                 if triage.isp_reference_number:
@@ -1387,134 +1495,172 @@ async def ingest_and_triage_eml(
                             details_json={"detail": envelope.subject},
                         )
                     )
+                    admin_em = await dispatch_admin_action_email(
+                        db,
+                        settings_row=settings_row,
+                        ticket=linked_ticket,
+                        branch=branch,
+                        action_label="ISP_AUTO_ACK_LOGGED",
+                        action_summary="Logged automated ISP acknowledgement without starting 4-6h welcome loop",
+                        details_lines=base_context_lines,
+                        approval_required=False,
+                    )
+                    _record_admin_notification(admin_em)
                     action_label = "ISP_AUTO_ACK_LOGGED"
                     actions_taken.append(
                         "Logged automated ISP acknowledgement without starting 4-6h welcome loop"
                     )
                 elif triage.intent in {"ISP_WELCOME", "INVESTIGATING_UPDATE"}:
-                    if linked_ticket.status != TicketStatus.ESCALATED_TO_ISP.value:
-                        transition_ticket(
-                            db,
-                            linked_ticket,
-                            TicketStatus.ESCALATED_TO_ISP,
-                            reason=f"ISP reply ({triage.intent})",
+                    act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
+                        db,
+                        settings_row=settings_row,
+                        ticket=linked_ticket,
+                        branch=branch,
+                        action_label="ISP_WELCOME_RECORDED_4_6H_LOOP_STARTED",
+                        summary=(
+                            f"Record ISP Case #{linked_ticket.isp_reference_number or 'ack'} and start {settings_row.followup_interval_minutes}m follow-up loop"
+                        ),
+                        target_status=TicketStatus.ESCALATED_TO_ISP,
+                        transition_reason=f"ISP reply ({triage.intent})",
+                        isp_welcome_received=True,
+                        isp_reference_number=linked_ticket.isp_reference_number,
+                        followup_minutes=settings_row.followup_interval_minutes,
+                        update_last_isp_contact=True,
+                        proposed_events=[
+                            {
+                                "event_type": "isp_welcome",
+                                "summary": (
+                                    f"ISP Welcome mail received (Case #{triage.isp_reference_number or 'ack'})"
+                                    if triage.intent == "ISP_WELCOME"
+                                    else f"ISP investigation update logged (Case #{linked_ticket.isp_reference_number or 'open'})"
+                                ),
+                                "details_json": {
+                                    "detail": f"Next follow-up scheduled in {settings_row.followup_interval_minutes}m"
+                                },
+                            }
+                        ],
+                        context_lines=base_context_lines,
+                    )
+                    for em in sent_ems:
+                        _record_outbound(em)
+                    _record_admin_notification(admin_em)
+                    action_label = act_status
+                    if act_status == "AWAITING_ADMIN_APPROVAL":
+                        actions_taken.append(
+                            f"Paused for Admin Approval before recording ISP Welcome Case #{linked_ticket.isp_reference_number or 'ack'}"
                         )
-                    linked_ticket.isp_welcome_received = True
-                    linked_ticket.next_followup_at = datetime.now(timezone.utc) + timedelta(
-                        minutes=settings_row.followup_interval_minutes
-                    )
-                    db.add(
-                        TicketEvent(
-                            ticket_id=linked_ticket.id,
-                            actor_type="AI_AGENT",
-                            actor_name="AI_AGENT",
-                            event_type="isp_welcome",
-                            summary=(
-                                f"ISP Welcome mail received (Case #{triage.isp_reference_number or 'ack'})"
-                                if triage.intent == "ISP_WELCOME"
-                                else f"ISP investigation update logged (Case #{linked_ticket.isp_reference_number or 'open'})"
-                            ),
-                            details_json={
-                                "detail": f"Next follow-up scheduled in {settings_row.followup_interval_minutes}m"
-                            },
+                    else:
+                        actions_taken.append(
+                            f"Recorded ISP Case #{linked_ticket.isp_reference_number or 'ack'} and started {settings_row.followup_interval_minutes}m follow-up loop"
                         )
-                    )
-                    action_label = "ISP_WELCOME_RECORDED_4_6H_LOOP_STARTED"
-                    actions_taken.append(
-                        f"Recorded ISP Case #{linked_ticket.isp_reference_number or 'ack'} and started {settings_row.followup_interval_minutes}m follow-up loop"
-                    )
                 elif triage.intent == "SITE_CONTACT_UNREACHABLE":
-                    if linked_ticket.status != TicketStatus.AWAITING_BRANCH_CONTACT.value:
-                        transition_ticket(
-                            db,
-                            linked_ticket,
-                            TicketStatus.AWAITING_BRANCH_CONTACT,
-                            reason="ISP reported site contact unreachable",
-                        )
-                    linked_ticket.connection_failure_type = "SITE_CONTACT_UNREACHABLE"
                     target_rit = linked_ticket.sender_email or (
                         branch.regional_it_email
                         if branch and branch.regional_it_email
                         else "CITSupport@kazyon.com"
                     )
-                    med_out = await dispatch_outbound_email(
+                    act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                         db,
+                        settings_row=settings_row,
                         ticket=linked_ticket,
-                        thread_type="BRANCH",
-                        recipients=[target_rit],
-                        cc=resolve_branch_regional_it_cc(branch, db=db),
                         branch=branch,
-                        subject=f"URGENT [{linked_ticket.ticket_number}]: ISP cannot reach site contact",
-                        body_text=(
-                            f"The ISP reported that the site contact phone for store "
-                            f"{branch.name if branch else linked_ticket.ticket_number} is unreachable/busy. "
-                            "Kindly reply with an active phone number so we can relay it to the ISP."
-                        ),
-                        classification_label="CONTACT_BLOCKER_MEDIATION",
+                        action_label="MEDIATED_CONTACT_BLOCKER_WITH_BRANCH",
+                        summary=f"ISP reported unreachable site contact; email {target_rit} for an active phone number",
+                        target_status=TicketStatus.AWAITING_BRANCH_CONTACT,
+                        transition_reason="ISP reported site contact unreachable",
+                        connection_failure_type="SITE_CONTACT_UNREACHABLE",
+                        update_last_isp_contact=True,
+                        proposed_emails=[
+                            {
+                                "thread_type": "BRANCH",
+                                "recipients": [target_rit],
+                                "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                "subject": f"URGENT [{linked_ticket.ticket_number}]: ISP cannot reach site contact",
+                                "body_text": (
+                                    f"The ISP reported that the site contact phone for store "
+                                    f"{branch.name if branch else linked_ticket.ticket_number} is unreachable/busy. "
+                                    "Kindly reply with an active phone number so we can relay it to the ISP."
+                                ),
+                                "classification_label": "CONTACT_BLOCKER_MEDIATION",
+                            }
+                        ],
+                        proposed_events=[
+                            {
+                                "event_type": "isp_escalated",
+                                "summary": f"ISP reported unreachable site contact; emailed {target_rit} for active phone",
+                                "details_json": {
+                                    "detail": f"Case #{linked_ticket.isp_reference_number or 'open'}"
+                                },
+                            }
+                        ],
+                        context_lines=base_context_lines,
                     )
-                    _record_outbound(med_out)
-                    db.add(
-                        TicketEvent(
-                            ticket_id=linked_ticket.id,
-                            actor_type="AI_AGENT",
-                            actor_name="AI_AGENT",
-                            event_type="isp_escalated",
-                            summary=f"ISP reported unreachable site contact; emailed {target_rit} for active phone",
-                            details_json={
-                                "detail": f"Case #{linked_ticket.isp_reference_number or 'open'}"
-                            },
+                    for em in sent_ems:
+                        _record_outbound(em)
+                    _record_admin_notification(admin_em)
+                    action_label = act_status
+                    if act_status == "AWAITING_ADMIN_APPROVAL":
+                        actions_taken.append(
+                            f"Paused for Admin Approval before emailing {target_rit} for active site contact"
                         )
-                    )
-                    action_label = "MEDIATED_CONTACT_BLOCKER_WITH_BRANCH"
-                    actions_taken.append(
-                        f"Transitioned to AWAITING_BRANCH_CONTACT and emailed {target_rit} for active phone"
-                    )
+                    else:
+                        actions_taken.append(
+                            f"Transitioned to AWAITING_BRANCH_CONTACT and emailed {target_rit} for active phone"
+                        )
                 elif triage.intent == "BRANCH_ACTION_BLOCKER":
-                    if linked_ticket.status != TicketStatus.AWAITING_BRANCH_CONTACT.value:
-                        transition_ticket(
-                            db,
-                            linked_ticket,
-                            TicketStatus.AWAITING_BRANCH_CONTACT,
-                            reason="ISP requested branch-side check",
-                        )
-                    linked_ticket.connection_failure_type = "BRANCH_ACTION_BLOCKER"
                     target_rit = linked_ticket.sender_email or (
                         branch.regional_it_email
                         if branch and branch.regional_it_email
                         else "CITSupport@kazyon.com"
                     )
-                    med_out = await dispatch_outbound_email(
+                    act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                         db,
+                        settings_row=settings_row,
                         ticket=linked_ticket,
-                        thread_type="BRANCH",
-                        recipients=[target_rit],
-                        cc=resolve_branch_regional_it_cc(branch, db=db),
                         branch=branch,
-                        subject=f"ACTION REQUIRED [{linked_ticket.ticket_number}]: ISP requested branch check",
-                        body_text=(
-                            f"The ISP requested an on-site check for store "
-                            f"{branch.name if branch else linked_ticket.ticket_number} "
-                            f"(Case #{linked_ticket.isp_reference_number or 'open'}):\n\n"
-                            f"{triage.summary}\n\n"
-                            "Kindly perform the requested action and reply with an update and active site phone."
-                        ),
-                        classification_label="BRANCH_ACTION_MEDIATION",
+                        action_label="MEDIATED_BRANCH_ACTION_BLOCKER",
+                        summary=f"ISP requested branch-side check; forward instructions to {target_rit}",
+                        target_status=TicketStatus.AWAITING_BRANCH_CONTACT,
+                        transition_reason="ISP requested branch-side check",
+                        connection_failure_type="BRANCH_ACTION_BLOCKER",
+                        update_last_isp_contact=True,
+                        proposed_emails=[
+                            {
+                                "thread_type": "BRANCH",
+                                "recipients": [target_rit],
+                                "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                "subject": f"ACTION REQUIRED [{linked_ticket.ticket_number}]: ISP requested branch check",
+                                "body_text": (
+                                    f"The ISP requested an on-site check for store "
+                                    f"{branch.name if branch else linked_ticket.ticket_number} "
+                                    f"(Case #{linked_ticket.isp_reference_number or 'open'}):\n\n"
+                                    f"{triage.summary}\n\n"
+                                    "Kindly perform the requested action and reply with an update and active site phone."
+                                ),
+                                "classification_label": "BRANCH_ACTION_MEDIATION",
+                            }
+                        ],
+                        proposed_events=[
+                            {
+                                "event_type": "isp_escalated",
+                                "summary": f"ISP requested branch-side check; forwarded instructions to {target_rit}",
+                                "details_json": {"detail": triage.summary},
+                            }
+                        ],
+                        context_lines=base_context_lines,
                     )
-                    _record_outbound(med_out)
-                    db.add(
-                        TicketEvent(
-                            ticket_id=linked_ticket.id,
-                            actor_type="AI_AGENT",
-                            actor_name="AI_AGENT",
-                            event_type="isp_escalated",
-                            summary=f"ISP requested branch-side check; forwarded instructions to {target_rit}",
-                            details_json={"detail": triage.summary},
+                    for em in sent_ems:
+                        _record_outbound(em)
+                    _record_admin_notification(admin_em)
+                    action_label = act_status
+                    if act_status == "AWAITING_ADMIN_APPROVAL":
+                        actions_taken.append(
+                            f"Paused for Admin Approval before forwarding ISP branch-check instructions to {target_rit}"
                         )
-                    )
-                    action_label = "MEDIATED_BRANCH_ACTION_BLOCKER"
-                    actions_taken.append(
-                        f"Transitioned to AWAITING_BRANCH_CONTACT and forwarded ISP instructions to {target_rit}"
-                    )
+                    else:
+                        actions_taken.append(
+                            f"Transitioned to AWAITING_BRANCH_CONTACT and forwarded ISP instructions to {target_rit}"
+                        )
                 elif triage.intent == "ISP_RESOLVED":
                     if branch is None:
                         transition_ticket(
@@ -1525,6 +1671,17 @@ async def ingest_and_triage_eml(
                         )
                         linked_ticket.escalation_reason = EscalationReason.OTHER.value
                         linked_ticket.human_escalated_to = fallback_engineer
+                        admin_em = await dispatch_admin_action_email(
+                            db,
+                            settings_row=settings_row,
+                            ticket=linked_ticket,
+                            branch=None,
+                            action_label="HUMAN_ESCALATED_MISSING_BRANCH",
+                            action_summary="Escalated to NEEDS_HUMAN_REVIEW because branch is missing on ISP_RESOLVED",
+                            details_lines=base_context_lines,
+                            approval_required=False,
+                        )
+                        _record_admin_notification(admin_em)
                         action_label = "HUMAN_ESCALATED_MISSING_BRANCH"
                         actions_taken.append(
                             "Transitioned to NEEDS_HUMAN_REVIEW because branch is missing on ISP_RESOLVED"
@@ -1581,6 +1738,18 @@ async def ingest_and_triage_eml(
                                     details_json={"detail": str(diag_err)},
                                 )
                             )
+                            admin_em = await dispatch_admin_action_email(
+                                db,
+                                settings_row=settings_row,
+                                ticket=linked_ticket,
+                                branch=branch,
+                                action_label="HUMAN_ESCALATED_DIAGNOSTICS_UNAVAILABLE",
+                                action_summary=f"Final verification ICMP diagnostics unavailable ({diag_err}); escalated to human review",
+                                details_lines=base_context_lines
+                                + [f"Diagnostic Error: {diag_err}"],
+                                approval_required=False,
+                            )
+                            _record_admin_notification(admin_em)
                             action_label = "HUMAN_ESCALATED_DIAGNOSTICS_UNAVAILABLE"
                             actions_taken.append(
                                 f"Final verification failed due to missing ICMP ({diag_err}); escalated to human review"
@@ -1594,116 +1763,140 @@ async def ingest_and_triage_eml(
                                 and bool(diag_res.ip_2_up)
                                 and not bool(diag_res.four_g_hub_detected)
                             )
+                            ver_context = base_context_lines + [
+                                f"Final Verification Diagnosis: {diag_res.diagnosis_code} ({diag_res.summary})",
+                                (
+                                    f"IP1 ({branch.ip_1}): {'UP' if diag_res.ip_1_up else 'DOWN'} | "
+                                    f"IP2 ({branch.ip_2}): {'SKIPPED' if diag_res.ip_2_up is None else ('UP' if diag_res.ip_2_up else 'DOWN')} | "
+                                    f"4G Hub: {bool(diag_res.four_g_hub_detected)}"
+                                ),
+                            ]
                             if verified_pass:
-                                transition_ticket(
-                                    db,
-                                    linked_ticket,
-                                    TicketStatus.CLOSED,
-                                    reason="Final dual-ping & traceroute verification passed",
-                                )
                                 target_rit = linked_ticket.sender_email or (
                                     branch.regional_it_email
                                     if branch.regional_it_email
                                     else "CITSupport@kazyon.com"
                                 )
-                                confirm_out = await dispatch_outbound_email(
-                                    db,
-                                    ticket=linked_ticket,
-                                    thread_type="BRANCH",
-                                    recipients=[target_rit],
-                                    cc=resolve_branch_regional_it_cc(branch, db=db),
-                                    branch=branch,
-                                    subject=f"[{linked_ticket.ticket_number}] Resolved: Store {branch.name} Link Restored & Verified",
-                                    body_text=(
-                                        f"Dear Regional IT ({branch.region}),\n"
-                                        f"{branch.isp_name} reported resolution for store {branch.name} "
-                                        f"(Case #{linked_ticket.isp_reference_number or 'closed'}).\n"
-                                        f"Automated final verification confirmed IP1 ({branch.ip_1}) UP and IP2 ({branch.ip_2}) UP "
-                                        f"with 0% packet loss on the primary link. Ticket {linked_ticket.ticket_number} is now closed."
-                                    ),
-                                    classification_label="RESOLUTION_CONFIRMATION",
-                                )
-                                _record_outbound(confirm_out)
-
                                 isp_ack_to, isp_ack_cc = resolve_isp_recipients(branch, db=db)
-                                isp_ack = await dispatch_outbound_email(
+                                act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                                     db,
+                                    settings_row=settings_row,
                                     ticket=linked_ticket,
-                                    thread_type="ISP",
-                                    recipients=isp_ack_to,
-                                    cc=isp_ack_cc,
-                                    subject=f"RE: {envelope.subject}",
-                                    body_text=(
-                                        f"Dear {branch.isp_name} NOC,\n"
-                                        f"We have verified that both router IP1 ({branch.ip_1}) and switch IP2 ({branch.ip_2}) "
-                                        f"for store {branch.branch_code} are up and stable. Thank you — confirming ticket closure."
+                                    branch=branch,
+                                    action_label="VERIFIED_AND_CLOSED",
+                                    summary=(
+                                        f"Final Dual-Ping verification PASSED for store {branch.name}; "
+                                        f"close ticket {linked_ticket.ticket_number} and send closure confirmation to Regional IT & {branch.isp_name}"
                                     ),
-                                    in_reply_to=envelope.message_id,
-                                    classification_label="ISP_CLOSURE_ACK",
+                                    target_status=TicketStatus.CLOSED,
+                                    transition_reason="Final dual-ping & traceroute verification passed",
+                                    proposed_emails=[
+                                        {
+                                            "thread_type": "BRANCH",
+                                            "recipients": [target_rit],
+                                            "cc": resolve_branch_regional_it_cc(branch, db=db),
+                                            "subject": f"[{linked_ticket.ticket_number}] Resolved: Store {branch.name} Link Restored & Verified",
+                                            "body_text": (
+                                                f"Dear Regional IT ({branch.region}),\n"
+                                                f"{branch.isp_name} reported resolution for store {branch.name} "
+                                                f"(Case #{linked_ticket.isp_reference_number or 'closed'}).\n"
+                                                f"Automated final verification confirmed IP1 ({branch.ip_1}) UP and IP2 ({branch.ip_2}) UP "
+                                                f"with 0% packet loss on the primary link. Ticket {linked_ticket.ticket_number} is now closed."
+                                            ),
+                                            "classification_label": "RESOLUTION_CONFIRMATION",
+                                        },
+                                        {
+                                            "thread_type": "ISP",
+                                            "recipients": isp_ack_to,
+                                            "cc": isp_ack_cc,
+                                            "subject": f"RE: {envelope.subject}",
+                                            "body_text": (
+                                                f"Dear {branch.isp_name} NOC,\n"
+                                                f"We have verified that both router IP1 ({branch.ip_1}) and switch IP2 ({branch.ip_2}) "
+                                                f"for store {branch.branch_code} are up and stable. Thank you — confirming ticket closure."
+                                            ),
+                                            "in_reply_to": envelope.message_id,
+                                            "classification_label": "ISP_CLOSURE_ACK",
+                                        },
+                                    ],
+                                    proposed_events=[
+                                        {
+                                            "event_type": "ticket_closed",
+                                            "summary": "Final dual-ping verification passed; notified Branch & ISP and closed ticket",
+                                            "details_json": {"detail": "IP1 UP, IP2 UP"},
+                                        }
+                                    ],
+                                    context_lines=ver_context,
                                 )
-                                _record_outbound(isp_ack)
-
-                                db.add(
-                                    TicketEvent(
-                                        ticket_id=linked_ticket.id,
-                                        actor_type="AI_AGENT",
-                                        actor_name="AI_AGENT",
-                                        event_type="ticket_closed",
-                                        summary="Final dual-ping verification passed; notified Branch & ISP and closed ticket",
-                                        details_json={"detail": "IP1 UP, IP2 UP"},
+                                for em in sent_ems:
+                                    _record_outbound(em)
+                                _record_admin_notification(admin_em)
+                                action_label = act_status
+                                if act_status == "AWAITING_ADMIN_APPROVAL":
+                                    actions_taken.append(
+                                        "Final verification Dual-Ping PASSED; paused for Admin Approval before closing ticket"
                                     )
-                                )
-                                action_label = "VERIFIED_AND_CLOSED"
-                                actions_taken.append(
-                                    "Final verification Dual-Ping PASSED; sent closure confirmation to Regional IT & ISP"
-                                )
+                                else:
+                                    actions_taken.append(
+                                        "Final verification Dual-Ping PASSED; sent closure confirmation to Regional IT & ISP"
+                                    )
                             else:
                                 # Final verification failed — reject premature ISP closure and keep chasing!
-                                transition_ticket(
-                                    db,
-                                    linked_ticket,
-                                    TicketStatus.ESCALATED_TO_ISP,
-                                    reason=f"Final verification failed ({diag_res.diagnosis_code})",
-                                )
-                                linked_ticket.connection_failure_type = diag_res.diagnosis_code
-                                linked_ticket.next_followup_at = datetime.now(
-                                    timezone.utc
-                                ) + timedelta(minutes=settings_row.followup_interval_minutes)
                                 reopen_to, reopen_cc = resolve_isp_recipients(branch, db=db)
-                                reopen_out = await dispatch_outbound_email(
+                                act_status, sent_ems, admin_em = await apply_or_queue_ticket_action(
                                     db,
+                                    settings_row=settings_row,
                                     ticket=linked_ticket,
-                                    thread_type="ISP",
-                                    recipients=reopen_to,
-                                    cc=reopen_cc,
-                                    subject=f"RE: {envelope.subject} [Verification Failed - Still Down]",
-                                    body_text=(
-                                        f"Dear {branch.isp_name} NOC,\n"
-                                        f"Following your closure notice for store {branch.branch_code} "
-                                        f"(Case #{linked_ticket.isp_reference_number or 'open'}), our automated verification "
-                                        f"still detects {diag_res.diagnosis_code} (IP1={'UP' if diag_res.ip_1_up else 'DOWN'}, "
-                                        f"IP2={'SKIPPED' if diag_res.ip_2_up is None else ('UP' if diag_res.ip_2_up else 'DOWN')}, "
-                                        f"4G_Backup={bool(diag_res.four_g_hub_detected)}).\n"
-                                        "Kindly keep the trouble ticket open and re-check the circuit."
+                                    branch=branch,
+                                    action_label="REJECTED_PREMATURE_ISP_CLOSURE",
+                                    summary=(
+                                        f"Final verification FAILED ({diag_res.diagnosis_code}) after {branch.isp_name} closure claim; "
+                                        f"reject premature closure on ISP thread and keep ticket open"
                                     ),
-                                    in_reply_to=envelope.message_id,
-                                    classification_label="ISP_REOPEN_FAILED_VERIFY",
+                                    target_status=TicketStatus.ESCALATED_TO_ISP,
+                                    transition_reason=f"Final verification failed ({diag_res.diagnosis_code})",
+                                    connection_failure_type=diag_res.diagnosis_code,
+                                    followup_minutes=settings_row.followup_interval_minutes,
+                                    proposed_emails=[
+                                        {
+                                            "thread_type": "ISP",
+                                            "recipients": reopen_to,
+                                            "cc": reopen_cc,
+                                            "subject": f"RE: {envelope.subject} [Verification Failed - Still Down]",
+                                            "body_text": (
+                                                f"Dear {branch.isp_name} NOC,\n"
+                                                f"Following your closure notice for store {branch.branch_code} "
+                                                f"(Case #{linked_ticket.isp_reference_number or 'open'}), our automated verification "
+                                                f"still detects {diag_res.diagnosis_code} (IP1={'UP' if diag_res.ip_1_up else 'DOWN'}, "
+                                                f"IP2={'SKIPPED' if diag_res.ip_2_up is None else ('UP' if diag_res.ip_2_up else 'DOWN')}, "
+                                                f"4G_Backup={bool(diag_res.four_g_hub_detected)}).\n"
+                                                "Kindly keep the trouble ticket open and re-check the circuit."
+                                            ),
+                                            "in_reply_to": envelope.message_id,
+                                            "classification_label": "ISP_REOPEN_FAILED_VERIFY",
+                                        }
+                                    ],
+                                    proposed_events=[
+                                        {
+                                            "event_type": "dual_ping",
+                                            "summary": f"ISP claimed closure, but verification failed ({diag_res.diagnosis_code}) — rejected closure",
+                                            "details_json": {"detail": diag_res.summary},
+                                        }
+                                    ],
+                                    context_lines=ver_context,
                                 )
-                                _record_outbound(reopen_out)
-                                db.add(
-                                    TicketEvent(
-                                        ticket_id=linked_ticket.id,
-                                        actor_type="AI_AGENT",
-                                        actor_name="AI_AGENT",
-                                        event_type="dual_ping",
-                                        summary=f"ISP claimed closure, but verification failed ({diag_res.diagnosis_code}) — rejected closure",
-                                        details_json={"detail": diag_res.summary},
+                                for em in sent_ems:
+                                    _record_outbound(em)
+                                _record_admin_notification(admin_em)
+                                action_label = act_status
+                                if act_status == "AWAITING_ADMIN_APPROVAL":
+                                    actions_taken.append(
+                                        f"Final verification failed ({diag_res.diagnosis_code}); paused for Admin Approval before rejecting ISP closure"
                                     )
-                                )
-                                action_label = "REJECTED_PREMATURE_ISP_CLOSURE"
-                                actions_taken.append(
-                                    f"Final verification failed ({diag_res.diagnosis_code}); rejected closure on ISP thread"
-                                )
+                                else:
+                                    actions_taken.append(
+                                        f"Final verification failed ({diag_res.diagnosis_code}); rejected closure on ISP thread"
+                                    )
                 elif triage.intent == "SPECIAL_BLOCKER":
                     transition_ticket(
                         db,
@@ -1741,6 +1934,18 @@ async def ingest_and_triage_eml(
                         )
                     )
                     action_label = f"HUMAN_ESCALATED_{linked_ticket.escalation_reason}"
+                    admin_em = await dispatch_admin_action_email(
+                        db,
+                        settings_row=settings_row,
+                        ticket=linked_ticket,
+                        branch=branch,
+                        action_label=action_label,
+                        action_summary=f"Paused AI and escalated ISP special blocker ({linked_ticket.escalation_reason}) to {fallback_engineer}",
+                        details_lines=base_context_lines
+                        + [f"Escalation Reason: {linked_ticket.escalation_reason}"],
+                        approval_required=False,
+                    )
+                    _record_admin_notification(admin_em)
                     actions_taken.append(
                         f"Paused AI and escalated {linked_ticket.escalation_reason} to {fallback_engineer}"
                     )
@@ -1774,6 +1979,17 @@ async def ingest_and_triage_eml(
                 )
                 _record_outbound(hum_unrec)
                 action_label = "ROUTED_TO_HUMAN_REVIEW_QUEUE"
+                admin_em = await dispatch_admin_action_email(
+                    db,
+                    settings_row=settings_row,
+                    ticket=linked_ticket,
+                    branch=branch,
+                    action_label=action_label,
+                    action_summary=f"Low confidence / unrecognized email routed to Human Review Queue ({fallback_engineer})",
+                    details_lines=base_context_lines,
+                    approval_required=False,
+                )
+                _record_admin_notification(admin_em)
                 actions_taken.append(
                     f"Low confidence / unrecognized email routed to Human Review Queue and emailed report to {fallback_engineer}"
                 )
@@ -1841,6 +2057,7 @@ async def ingest_and_triage_eml(
         "ticket_status": linked_ticket.status if linked_ticket else None,
         "correlation_method": correlation_method,
         "outbound_emails": outbound_emails_sent,
+        "admin_notification": admin_notification_sent,
         "actions_taken": actions_taken,
         "triage": triage.model_dump(),
         "stage_trace": stage_trace,

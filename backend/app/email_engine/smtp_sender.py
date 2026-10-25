@@ -34,6 +34,20 @@ _CANONICAL_ISP_DEFAULTS: dict[str, str] = {
 }
 
 
+def resolve_admin_notification_email(
+    settings_row: Optional[SystemSettings],
+) -> str:
+    """Resolve the configured Admin notification email from Page 12 (`system_settings`),
+    falling back to the primary fallback contact or `ADMIN_EMAIL` in `.env`."""
+    if settings_row is not None:
+        configured = (getattr(settings_row, "admin_notification_email", "") or "").strip()
+        if configured:
+            return configured
+        if settings_row.fallback_contacts and settings_row.fallback_contacts[0].get("email"):
+            return str(settings_row.fallback_contacts[0]["email"]).strip()
+    return (get_settings().admin_email or "admin@kazyon.com").strip()
+
+
 def resolve_branch_regional_it_cc(
     branch: Optional[Branch],
     db: Optional[Session] = None,
@@ -384,7 +398,10 @@ async def dispatch_outbound_email(
         .where(SystemSettings.config_key == "global")
         .limit(1)
     ).scalar_one_or_none()
-    allowed = check_and_increment_outbound_allowance(guard_key, max_per_hour=per_hour_limit)
+    if thread_type == "ADMIN_NOTIFICATION":
+        allowed = True
+    else:
+        allowed = check_and_increment_outbound_allowance(guard_key, max_per_hour=per_hour_limit)
 
     now = datetime.now(timezone.utc)
     mid = f"<{uuid4().hex[:12]}.kz@kazyon.com>"
@@ -429,11 +446,11 @@ async def dispatch_outbound_email(
         if not resolved_in_reply_to and references_chain:
             resolved_in_reply_to = references_chain[-1]
 
-    # Ensure `[NET-XXXX]` tag is present on BRANCH and HUMAN_ESCALATION threads for deterministic reply matching
+    # Ensure `[NET-XXXX]` tag is present on BRANCH, HUMAN_ESCALATION, and ADMIN_NOTIFICATION threads
     final_subject = subject
     if (
         ticket is not None
-        and thread_type in {"BRANCH", "HUMAN_ESCALATION"}
+        and thread_type in {"BRANCH", "HUMAN_ESCALATION", "ADMIN_NOTIFICATION"}
         and ticket.ticket_number not in final_subject
     ):
         final_subject = f"[{ticket.ticket_number}] {final_subject}"
@@ -531,3 +548,85 @@ async def dispatch_outbound_email(
     db.add(email_row)
     db.flush()
     return email_row
+
+
+async def dispatch_admin_action_email(
+    db: Session,
+    *,
+    settings_row: SystemSettings,
+    ticket: Optional[Ticket],
+    branch: Optional[Branch],
+    action_label: str,
+    action_summary: str,
+    details_lines: list[str],
+    approval_required: bool = False,
+) -> Optional[TicketEmail]:
+    """Send an email to the configured Admin email for every agent action (or when pausing to ask for admin approval)."""
+    if not approval_required and not getattr(settings_row, "notify_admin_on_every_action", True):
+        return None
+
+    admin_email = resolve_admin_notification_email(settings_row)
+    t_label = ticket.ticket_number if ticket is not None else "AGENT"
+    b_label = (
+        f"{branch.name} (SAP {branch.branch_code} · {branch.isp_name})"
+        if branch is not None
+        else "System"
+    )
+    if approval_required:
+        subject = f"[ADMIN APPROVAL REQUIRED] {t_label} · {action_label} ({branch.name if branch else 'System'})"
+        mode_line = "Execution Mode: ASK BEFORE ACTING (Admin Approval Required)"
+        footer = (
+            "\n----------------------------------------------------------------\n"
+            "ACTION REQUIRED IN WEB CONSOLE:\n"
+            "The AI Agent has paused before executing this action.\n"
+            f"Open Kazyon NetOps Console -> Human Review Queue or Ticket {t_label} "
+            "and click 'Approve & Execute' to proceed or 'Reject Action' to cancel."
+        )
+        cls_label = "ADMIN_APPROVAL_REQUEST"
+    else:
+        subject = f"[AGENT ACTION REPORT] {t_label} · {action_label} ({branch.name if branch else 'System'})"
+        mode_line = "Execution Mode: PROCEED WITHOUT ASKING (Autonomous)"
+        footer = (
+            "\n----------------------------------------------------------------\n"
+            "This is an automated notification sent to the Admin for every action performed by the Kazyon NetOps AI Agent."
+        )
+        cls_label = "ADMIN_ACTION_NOTIFICATION"
+
+    body_parts = [
+        mode_line,
+        f"Ticket: {t_label} (Status: {ticket.status if ticket is not None else 'N/A'})",
+        f"Store / Branch: {b_label}",
+        f"Agent Action: {action_label}",
+        f"Summary: {action_summary}",
+        "",
+        *details_lines,
+        footer,
+    ]
+    em = await dispatch_outbound_email(
+        db,
+        ticket=ticket,
+        thread_type="ADMIN_NOTIFICATION",
+        recipients=[admin_email],
+        subject=subject,
+        body_text="\n".join(body_parts),
+        classification_label=cls_label,
+        ai_analysis_json={
+            "thread": "ADMIN_NOTIFICATION",
+            "template": cls_label,
+            "action_label": action_label,
+            "approval_required": approval_required,
+        },
+    )
+    if not approval_required and ticket is not None and ticket.id is not None:
+        db.add(
+            TicketEvent(
+                ticket_id=ticket.id,
+                actor_type="AI_AGENT",
+                actor_name="AI_AGENT",
+                event_type="admin_notified",
+                summary=f"Notified admin ({admin_email}) of agent action: {action_label}",
+                details_json={"detail": action_summary, "admin_email": admin_email},
+            )
+        )
+        db.flush()
+    return em

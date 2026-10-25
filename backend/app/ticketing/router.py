@@ -55,6 +55,7 @@ from app.ticketing.schemas import (
 )
 from app.ticketing.service import (
     add_ticket_note,
+    approve_pending_ticket_action,
     convert_unrecognized_email_to_ticket,
     create_manual_ticket,
     escalate_ticket_to_human_engineer,
@@ -68,6 +69,7 @@ from app.ticketing.service import (
     list_replication_reports,
     list_ticket_cards,
     override_ticket_vision_verdict,
+    reject_pending_ticket_action,
     send_live_test_email,
     send_ticket_manual_reply,
     test_smtp_settings,
@@ -238,6 +240,44 @@ async def override_vision_endpoint(
 ) -> TicketDetail360Response:
     """Override the Gemma 4 26B router photo vision verdict on a ticket."""
     return override_ticket_vision_verdict(db, ticket_identifier, payload, actor=actor)
+
+
+@tickets_router.post("/{ticket_identifier}/approve-action", response_model=TicketDetail360Response)
+async def approve_pending_ticket_action_endpoint(
+    ticket_identifier: str,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_permission("tickets:edit_status")),
+) -> TicketDetail360Response:
+    """Approve and execute a pending AI agent action on a ticket in Approval Mode."""
+    detail = await approve_pending_ticket_action(db, ticket_identifier, actor=actor)
+    await event_bus.broadcast(
+        "ticket.updated",
+        {
+            "ticket_number": detail.ticket_number,
+            "status": detail.status,
+            "ai_automation_enabled": detail.ai_automation_enabled,
+        },
+    )
+    return detail
+
+
+@tickets_router.post("/{ticket_identifier}/reject-action", response_model=TicketDetail360Response)
+async def reject_pending_ticket_action_endpoint(
+    ticket_identifier: str,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_permission("tickets:edit_status")),
+) -> TicketDetail360Response:
+    """Reject a pending AI agent action on a ticket without dispatching proposed emails."""
+    detail = await reject_pending_ticket_action(db, ticket_identifier, actor=actor)
+    await event_bus.broadcast(
+        "ticket.updated",
+        {
+            "ticket_number": detail.ticket_number,
+            "status": detail.status,
+            "ai_automation_enabled": detail.ai_automation_enabled,
+        },
+    )
+    return detail
 
 
 @replication_router.get("/reports")

@@ -35,6 +35,9 @@ const DEFAULT_SETTINGS: SystemSettingsDTO = {
   diagnostic_timeout_sec: 20,
   ping_count: 4,
   traceroute_max_hops: 15,
+  admin_notification_email: "admin@kazyon.com",
+  notify_admin_on_every_action: true,
+  require_admin_approval_before_action: false,
   fallback_contacts: [
     { ini: "NO", email: "noc-oncall@kazyon.com", role: "On-duty engineer" },
     {
@@ -165,6 +168,49 @@ export function SettingsView({
         nextKilled
           ? "Global AI master kill-switch activated. All autonomous actions paused."
           : "Global AI master kill-switch deactivated. Autonomous actions resumed.",
+      );
+    } catch {
+      // Keep local toggle
+    }
+  };
+
+  const handleSetExecutionMode = async (requireApproval: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      require_admin_approval_before_action: requireApproval,
+    }));
+    try {
+      const updated = await settingsApi.update({
+        require_admin_approval_before_action: requireApproval,
+        admin_notification_email: settings.admin_notification_email,
+        notify_admin_on_every_action: settings.notify_admin_on_every_action,
+      });
+      setSettings(updated);
+      setToast(
+        requireApproval
+          ? "Agent Execution Mode set to ASK BEFORE ACTING: Agent will run triage & diagnostics first, email the Admin, and pause for approval before sending outbound emails or finalizing ticket status."
+          : "Agent Execution Mode set to PROCEED WITHOUT ASKING: Agent will execute actions autonomously and email a report of every action to the Admin.",
+      );
+    } catch {
+      // Keep local toggle
+    }
+  };
+
+  const handleToggleNotifyEveryAction = async (enabled: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      notify_admin_on_every_action: enabled,
+    }));
+    try {
+      const updated = await settingsApi.update({
+        notify_admin_on_every_action: enabled,
+        admin_notification_email: settings.admin_notification_email,
+      });
+      setSettings(updated);
+      setToast(
+        enabled
+          ? `Admin action email notifications enabled (${updated.admin_notification_email}).`
+          : "Admin action email notifications disabled for autonomous actions (Approval Mode requests are still emailed).",
       );
     } catch {
       // Keep local toggle
@@ -335,6 +381,197 @@ export function SettingsView({
             ? "Resume global AI automation"
             : "Pause all AI automation"}
         </button>
+      </section>
+
+      <section
+        className="kz-card"
+        style={{
+          border: `1.5px solid ${
+            settings.require_admin_approval_before_action
+              ? "var(--warning)"
+              : "var(--brand-500)"
+          }`,
+        }}
+      >
+        <div className="kz-card-hd">
+          <div>
+            <h3>Admin Action Email Notifications &amp; Execution Mode</h3>
+            <p>
+              Email the Admin on every action the AI agent performs, and choose
+              whether the agent proceeds autonomously or asks for Admin approval
+              before acting.
+            </p>
+          </div>
+          <Badge
+            tone={
+              settings.require_admin_approval_before_action ? "warning" : "good"
+            }
+          >
+            {settings.require_admin_approval_before_action
+              ? "Ask Admin Before Acting"
+              : "Proceed Without Asking"}
+          </Badge>
+        </div>
+
+        <div
+          className="kz-card-bd"
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
+        >
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: 13,
+                marginBottom: 6,
+                color: "var(--ink)",
+              }}
+            >
+              Agent Execution Mode
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => handleSetExecutionMode(false)}
+                style={{
+                  textAlign: "left",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  border: `1.5px solid ${
+                    !settings.require_admin_approval_before_action
+                      ? "var(--brand-600)"
+                      : "var(--border-strong)"
+                  }`,
+                  background: !settings.require_admin_approval_before_action
+                    ? "var(--brand-50)"
+                    : "var(--surface-000)",
+                  color: "var(--ink)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    fontSize: 13.5,
+                  }}
+                >
+                  <span>Proceed Without Asking (Autonomous)</span>
+                  {!settings.require_admin_approval_before_action ? (
+                    <Badge tone="good">Active</Badge>
+                  ) : null}
+                </div>
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 12,
+                    lineHeight: "18px",
+                    color: "var(--ink-muted)",
+                  }}
+                >
+                  Agent runs triage, vision check, and ICMP diagnostics,
+                  executes outbound Branch/ISP emails &amp; ticket transitions
+                  immediately, and emails an action report to the Admin.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetExecutionMode(true)}
+                style={{
+                  textAlign: "left",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  border: `1.5px solid ${
+                    settings.require_admin_approval_before_action
+                      ? "var(--warning)"
+                      : "var(--border-strong)"
+                  }`,
+                  background: settings.require_admin_approval_before_action
+                    ? "var(--warning-bg)"
+                    : "var(--surface-000)",
+                  color: "var(--ink)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    fontSize: 13.5,
+                  }}
+                >
+                  <span>Ask Admin Before Acting (Approval Mode)</span>
+                  {settings.require_admin_approval_before_action ? (
+                    <Badge tone="warning">Active</Badge>
+                  ) : null}
+                </div>
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 12,
+                    lineHeight: "18px",
+                    color: "var(--ink-muted)",
+                  }}
+                >
+                  Agent runs read-only triage, vision &amp; ICMP diagnostics
+                  first, then pauses in the Human Review Queue and emails the
+                  Admin with full context &amp; draft emails for Web Console
+                  approval.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          <label style={labelStyle}>
+            <span>Admin notification email</span>
+            <input
+              type="email"
+              className="kz-mono"
+              value={settings.admin_notification_email}
+              placeholder="admin@kazyon.com"
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  admin_notification_email: e.target.value,
+                }))
+              }
+              style={fieldStyle}
+            />
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              fontWeight: 600,
+              fontSize: 13,
+              paddingTop: 18,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={settings.notify_admin_on_every_action}
+              onChange={(e) =>
+                handleToggleNotifyEveryAction(e.target.checked)
+              }
+            />
+            <span>
+              Send email to Admin on every agent action (Autonomous &amp;
+              Approval modes)
+            </span>
+          </label>
+        </div>
       </section>
 
       <div

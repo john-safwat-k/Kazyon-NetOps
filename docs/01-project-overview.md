@@ -61,4 +61,4 @@ The **IT Network Support AI Agent & Ticketing Harness** (`Kazyon NetOps`) automa
   9. `DiagnosticsSandboxView.tsx` — Page 9: Network Diagnostics Sandbox (`IP1`/`IP2` Dual-Ping & 4G Hub Traceroute)
   10. `DirectoryView.tsx` — Page 10: 1,150-Store Branches & 3-ISP Directory + Excel Bulk Seeder
   11. `UsersRbacView.tsx` — Page 11: Users, Roles & 8$\times$5 Granular Permission Matrix
-  12. `SettingsView.tsx` — Page 12: AI Agent, Mailbox, SLA Timers & Global Master Kill-Switch
+  12. `SettingsView.tsx` — Page 12: AI Agent, Mailbox, SLA Timers, Admin Action Email Notifications & Execution Mode (`Proceed Without Asking` vs `Ask Admin Before Acting`), & Global Master Kill-Switch

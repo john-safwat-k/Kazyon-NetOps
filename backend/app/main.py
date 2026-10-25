@@ -94,6 +94,7 @@ def _ensure_sqlite_dev_columns() -> None:
             ("isp_welcome_received", "BOOLEAN DEFAULT 0"),
             ("escalation_reason", "VARCHAR(64)"),
             ("human_escalated_to", "VARCHAR(255)"),
+            ("pending_admin_action_json", "JSON"),
         ],
         "diagnostic_runs": [
             ("branch_code", "VARCHAR(64)"),
@@ -118,6 +119,9 @@ def _ensure_sqlite_dev_columns() -> None:
             ("smtp_username", "VARCHAR(255) NOT NULL DEFAULT ''"),
             ("smtp_password_encrypted", "TEXT NOT NULL DEFAULT ''"),
             ("test_redirect_email", "VARCHAR(255) NOT NULL DEFAULT ''"),
+            ("admin_notification_email", "VARCHAR(255) NOT NULL DEFAULT 'admin@kazyon.com'"),
+            ("notify_admin_on_every_action", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("require_admin_approval_before_action", "BOOLEAN NOT NULL DEFAULT 0"),
         ],
     }
     with engine.begin() as conn:

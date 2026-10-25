@@ -56,6 +56,9 @@ class Ticket(Base):
     ai_automation_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     escalation_reason: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
     human_escalated_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    pending_admin_action_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSONVariant, default=None, nullable=True
+    )
     last_isp_contact_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -265,6 +268,15 @@ class SystemSettings(Base):
     traceroute_max_hops: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
     fallback_contacts: Mapped[list[dict[str, str]]] = mapped_column(
         JSONVariant, default=list, nullable=False
+    )
+    admin_notification_email: Mapped[str] = mapped_column(
+        String(255), default="admin@kazyon.com", server_default="admin@kazyon.com", nullable=False
+    )
+    notify_admin_on_every_action: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False
+    )
+    require_admin_approval_before_action: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sa_false(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

@@ -51,6 +51,7 @@ class ConnectionFailureType(StrEnum):
 class EscalationReason(StrEnum):
     """Reason a ticket or email was escalated to a Human IT Engineer."""
 
+    ADMIN_APPROVAL_REQUIRED = "ADMIN_APPROVAL_REQUIRED"
     UNRECOGNIZED_EMAIL = "UNRECOGNIZED_EMAIL"
     QUOTA_CONSUMED = "QUOTA_CONSUMED"
     INTERNAL_BOX_CABLE = "INTERNAL_BOX_CABLE"

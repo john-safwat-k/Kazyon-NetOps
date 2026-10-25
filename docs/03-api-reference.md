@@ -68,6 +68,15 @@
 - **Body:** `{"cables_plugged": true, "summary": "..."}`
 - **Response (`200 OK`):** `TicketDetail360Response`
 
+### `POST /api/v1/tickets/{ticket_identifier}/approve-action`
+- **Auth:** `require_permission("tickets:edit_status")`
+- **Response (`200 OK`):** Approves and immediately executes a pending AI agent action queued while `require_admin_approval_before_action` is enabled, sends any draft outbound Branch/ISP emails, transitions the ticket to its proposed state, notifies the Admin of approval, and returns `TicketDetail360Response`.
+
+### `POST /api/v1/tickets/{ticket_identifier}/reject-action`
+- **Auth:** `require_permission("tickets:edit_status")`
+- **Body (optional):** `{"reason": "..."}`
+- **Response (`200 OK`):** Rejects and discards the pending AI agent action without sending draft outbound emails, keeps the ticket in `NEEDS_HUMAN_REVIEW`, notifies the Admin of rejection, and returns `TicketDetail360Response`.
+
 ---
 
 ## Replication Dashboard Monitor (`/api/v1/replication`)
@@ -87,7 +96,7 @@
 
 ### `GET /api/v1/escalations`
 - **Auth:** `require_permission("tickets:view")`
-- **Response (`200 OK`):** `list[EscalationItemDto]` (`QUOTA_CONSUMED`, `MSAN_MIGRATION`, `INTERNAL_BOX_CABLE`, `UNRECOGNIZED_EMAIL`, `MAX_RETRIES`, `LOOP_GUARD_TRIPPED`, `LLM_UNAVAILABLE`, `DIAGNOSTICS_UNAVAILABLE`, `INGEST_FAILED`).
+- **Response (`200 OK`):** `list[EscalationItemDto]` (`ADMIN_APPROVAL_REQUIRED`, `QUOTA_CONSUMED`, `MSAN_MIGRATION`, `INTERNAL_BOX_CABLE`, `UNRECOGNIZED_EMAIL`, `MAX_RETRIES`, `LOOP_GUARD_TRIPPED`, `LLM_UNAVAILABLE`, `DIAGNOSTICS_UNAVAILABLE`, `INGEST_FAILED`). Includes `pending_admin_action` when `reason == "ADMIN_APPROVAL_REQUIRED"`.
 - Emails with no ticket are listed when they are `UNRECOGNIZED`, or when they are inbound `HUMAN_ESCALATION` rows labelled `LLM_UNAVAILABLE` (vLLM failed on every retry cycle) or `INGEST_FAILED` (the agent crashed while processing them). Their `reason` is that label.
 
 ### `POST /api/v1/escalations/convert-email/{email_id}`
@@ -205,7 +214,7 @@ These are the settings the agent actually runs with:
 
 ### `GET /api/v1/settings`
 - **Auth:** `require_permission("settings:read")`
-- **Response (`200 OK`):** `SystemSettingsDto`. It includes `smtp_security` (`starttls` | `ssl` | `none`), `smtp_enabled`, and `smtp_credentials_configured` (`true` when the environment login is set; the values are never returned).
+- **Response (`200 OK`):** `SystemSettingsDto`. It includes `smtp_security` (`starttls` | `ssl` | `none`), `smtp_enabled`, `smtp_credentials_configured` (`true` when the environment login is set; the values are never returned), `admin_notification_email`, `notify_admin_on_every_action` (`true` by default), and `require_admin_approval_before_action` (`false` = Autonomous Mode, `true` = Approval Mode).
 
 ### `PUT /api/v1/settings`
 - **Auth:** `require_permission("settings:update")`

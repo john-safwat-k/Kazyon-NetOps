@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import func, select
@@ -17,6 +17,7 @@ from app.directory.models import Branch
 from app.email_engine.imap_poller import poll_inbound_mailbox_raw
 from app.email_engine.smtp_listener import get_listener_status
 from app.email_engine.smtp_sender import (
+    dispatch_admin_action_email,
     dispatch_outbound_email,
     format_isp_escalation_email,
     resolve_isp_recipients,
@@ -26,6 +27,7 @@ from app.observability.event_bus import event_bus
 from app.ticketing.models import Ticket, TicketEmail, TicketEvent
 from app.ticketing.service import (
     apply_loop_guard_trip,
+    apply_or_queue_ticket_action,
     ensure_system_settings,
     transition_ticket,
 )
@@ -116,6 +118,19 @@ async def run_sla_chaser_cycle(db: Session) -> dict[str, Any]:
                     details_json={"detail": "MAX_RETRIES reached"},
                 )
             )
+            await dispatch_admin_action_email(
+                db,
+                settings_row=settings_row,
+                ticket=t,
+                branch=branch,
+                action_label="HUMAN_ESCALATED_MAX_RETRIES",
+                action_summary=f"Escalated ticket {t.ticket_number} to {fallback_engineer} after {t.followup_count} unanswered ISP chasers",
+                details_lines=[
+                    f"Escalation Reason: {EscalationReason.MAX_RETRIES.value}",
+                    f"Unanswered Chasers Sent: {t.followup_count}",
+                ],
+                approval_required=False,
+            )
             continue
 
         if branch is not None:
@@ -134,34 +149,51 @@ async def run_sla_chaser_cycle(db: Session) -> dict[str, Any]:
                 )
                 interval = settings_row.followup_interval_minutes
 
-            out_em = await dispatch_outbound_email(
+            next_chaser_num = t.followup_count + 1
+            act_status, sent_ems, _admin_em = await apply_or_queue_ticket_action(
                 db,
+                settings_row=settings_row,
                 ticket=t,
-                thread_type="ISP",
-                recipients=to_list,
-                cc=cc_list,
-                subject=subj,
-                body_text=body,
-                classification_label="CHASER",
+                branch=branch,
+                action_label="ISP_CHASER_SENT",
+                summary=f"Send automated SLA chaser #{next_chaser_num} to {branch.isp_name} ({to_list[0]})",
+                target_status=TicketStatus.ESCALATED_TO_ISP,
+                transition_reason=f"Automated SLA chaser #{next_chaser_num}",
+                followup_minutes=interval,
+                increment_followup_count=True,
+                update_last_isp_contact=True,
+                proposed_emails=[
+                    {
+                        "thread_type": "ISP",
+                        "recipients": to_list,
+                        "cc": cc_list,
+                        "subject": subj,
+                        "body_text": body,
+                        "classification_label": "CHASER",
+                    }
+                ],
+                proposed_events=[
+                    {
+                        "event_type": "chaser_scheduled",
+                        "summary": f"Automated SLA chaser #{next_chaser_num} sent to {branch.isp_name}",
+                        "details_json": {"detail": subj},
+                    }
+                ],
+                context_lines=[
+                    f"Chaser Number: #{next_chaser_num} (max before human={settings_row.max_chasers_before_human})",
+                    f"Welcome Received: {t.isp_welcome_received}",
+                    f"ISP Case Ref: {t.isp_reference_number or 'pending'}",
+                ],
             )
-            if (out_em.ai_analysis_json or {}).get("blocked_by_loop_guard"):
-                if apply_loop_guard_trip(db, t):
-                    escalated_to_human += 1
-            else:
-                t.followup_count += 1
-                t.last_isp_contact_at = now
-                t.next_followup_at = now + timedelta(minutes=interval)
-                chased += 1
-                db.add(
-                    TicketEvent(
-                        ticket_id=t.id,
-                        actor_type="AI_AGENT",
-                        actor_name="AI_AGENT",
-                        event_type="chaser_scheduled",
-                        summary=f"Automated SLA chaser #{t.followup_count} sent to {branch.isp_name}",
-                        details_json={"detail": subj},
-                    )
-                )
+            if act_status != "AWAITING_ADMIN_APPROVAL":
+                out_em = sent_ems[0] if sent_ems else None
+                if out_em is not None and (out_em.ai_analysis_json or {}).get(
+                    "blocked_by_loop_guard"
+                ):
+                    if apply_loop_guard_trip(db, t):
+                        escalated_to_human += 1
+                else:
+                    chased += 1
 
     db.commit()
     _loop_telemetry["chasers_sent_total"] = (
