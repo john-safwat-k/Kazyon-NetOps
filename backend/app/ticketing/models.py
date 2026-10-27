@@ -278,6 +278,57 @@ class SystemSettings(Base):
     require_admin_approval_before_action: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=sa_false(), nullable=False
     )
+    # Proactive Fleet Scan: the agent tests every branch on a schedule and opens tickets itself
+    fleet_scan_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sa_false(), nullable=False
+    )
+    fleet_scan_interval_minutes: Mapped[int] = mapped_column(
+        Integer, default=180, server_default="180", nullable=False
+    )
+    # Store-hours window in Africa/Cairo local time ("HH:MM"); a window may cross midnight
+    fleet_scan_window_start: Mapped[str] = mapped_column(
+        String(5), default="08:00", server_default="08:00", nullable=False
+    )
+    fleet_scan_window_end: Mapped[str] = mapped_column(
+        String(5), default="23:00", server_default="23:00", nullable=False
+    )
+    # Above this share of failing branches the scan opens no tickets and alerts a human instead
+    fleet_scan_mass_outage_pct: Mapped[int] = mapped_column(
+        Integer, default=5, server_default="5", nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class FleetScanRun(Base):
+    """One run of the Proactive Fleet Scan (scheduled or started from the console)."""
+
+    __tablename__ = "fleet_scan_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    suite_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    # SCHEDULER or the username that pressed "Run scan now"
+    triggered_by: Mapped[str] = mapped_column(String(128), default="SCHEDULER", nullable=False)
+    # COMPLETED | DRY_RUN | MASS_OUTAGE_GUARD | SKIPPED_KILL_SWITCH | FAILED
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    total_branches: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failing_initial: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    recovered_on_retest: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    confirmed_down: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duplicates_skipped: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_ticket_numbers: Mapped[list[str]] = mapped_column(
+        JSONVariant, default=list, nullable=False
+    )
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSONVariant, default=dict, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True, nullable=False
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )

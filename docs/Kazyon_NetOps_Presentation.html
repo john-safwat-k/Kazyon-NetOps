@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kazyon NetOps — IT Network Support AI Agent & Ticketing Harness</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anta&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-canvas: #fbf8f5;
+      --bg-surface: #ffffff;
+      --bg-elevated: #f5efe9;
+      --bg-sidebar: #1f1a17;
+      --text-primary: #1f1a17;
+      --text-secondary: #52463e;
+      --text-muted: #8b7b70;
+      --brand-orange: #f47a20;
+      --brand-orange-hover: #dc6612;
+      --brand-orange-soft: #fff1e6;
+      --border-subtle: #e6dcd2;
+      --font-display: 'Anta', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --radius-xl: 32px;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-pill: 9999px;
+    }
+
+    body.dark {
+      --bg-canvas: #14110f;
+      --bg-surface: #1e1916;
+      --bg-elevated: #28211d;
+      --text-primary: #f7f2ed;
+      --text-secondary: #cfc2b8;
+      --text-muted: #99897e;
+      --brand-orange-soft: #362011;
+      --border-subtle: #352c26;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-display);
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      transition: background-color 0.25s ease, color 0.25s ease;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Rounded Floating Top Navigation Bar */
+    .deck-topbar-wrap {
+      padding: 14px 28px 0;
+      flex-shrink: 0;
+      z-index: 20;
+    }
+
+    .deck-topbar {
+      height: 62px;
+      background: var(--bg-sidebar);
+      color: #f7f2ed;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      border-radius: var(--radius-pill);
+      border: 1px solid #352c26;
+      box-shadow: 0 10px 28px -8px rgba(31, 26, 23, 0.22);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--brand-orange);
+      color: #fff;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: 0.03em;
+      box-shadow: 0 4px 12px rgba(244, 122, 32, 0.4);
+    }
+
+    .brand-title {
+      font-size: 16px;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-subtitle {
+      font-size: 11.5px;
+      color: #b5a69b;
+      letter-spacing: 0.03em;
+    }
+
+    .deck-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .slide-jump-select {
+      background: #2b231f;
+      color: #f7f2ed;
+      border: 1px solid #423630;
+      border-radius: var(--radius-pill);
+      padding: 8px 16px;
+      font-family: var(--font-display);
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .btn-control {
+      background: #2b231f;
+      color: #f7f2ed;
+      border: 1px solid #423630;
+      border-radius: var(--radius-pill);
+      padding: 8px 16px;
+      font-family: var(--font-display);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .btn-control:hover {
+      background: var(--brand-orange);
+      border-color: var(--brand-orange);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+
+    .slide-counter {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: #d6c8be;
+      min-width: 68px;
+      text-align: center;
+      background: #28201c;
+      padding: 6px 12px;
+      border-radius: var(--radius-pill);
+    }
+
+    /* Rounded Progress Pill Bar */
+    .progress-wrap {
+      padding: 10px 48px 0;
+      flex-shrink: 0;
+    }
+
+    .progress-track {
+      height: 6px;
+      background: var(--border-subtle);
+      width: 100%;
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--brand-orange);
+      width: 0%;
+      border-radius: var(--radius-pill);
+      transition: width 0.3s ease;
+    }
+
+    /* Slide Viewport */
+    .deck-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 28px 22px;
+    }
+
+    .slide {
+      display: none;
+      width: 100%;
+      max-width: 1560px;
+      height: 100%;
+      max-height: 860px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xl);
+      box-shadow: 0 20px 50px -15px rgba(31, 26, 23, 0.1);
+      padding: 32px 38px;
+      overflow-y: auto;
+      animation: fadeSlide 0.28s ease-out;
+    }
+
+    .slide.active {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(8px) scale(0.995); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Cover Slide */
+    .cover-layout {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 36px;
+      height: 100%;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--brand-orange-soft);
+      color: var(--brand-orange);
+      font-size: 12.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 7px 16px;
+      border-radius: var(--radius-pill);
+      margin-bottom: 14px;
+    }
+
+    .cover-title {
+      font-size: 40px;
+      line-height: 1.18;
+      letter-spacing: 0.01em;
+      margin-bottom: 16px;
+      font-weight: 400;
+    }
+
+    .cover-lead {
+      font-size: 17px;
+      line-height: 1.65;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .kpi-box {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      text-align: center;
+    }
+
+    .kpi-value {
+      font-size: 26px;
+      color: var(--brand-orange);
+      letter-spacing: 0.03em;
+    }
+
+    .kpi-label {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    /* Feature Slide Layout */
+    .slide-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 22px;
+      flex-shrink: 0;
+    }
+
+    .slide-title-group h2 {
+      font-size: 28px;
+      font-weight: 400;
+      letter-spacing: 0.015em;
+      margin-top: 4px;
+    }
+
+    .slide-subtitle {
+      font-size: 15.5px;
+      color: var(--text-secondary);
+      margin-top: 5px;
+      line-height: 1.45;
+    }
+
+    .route-badge {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 9px 18px;
+      border-radius: var(--radius-pill);
+      white-space: nowrap;
+    }
+
+    .feature-body {
+      display: grid;
+      grid-template-columns: 1.25fr 0.9fr;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .screenshot-frame {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      cursor: zoom-in;
+      box-shadow: 0 12px 32px -10px rgba(31, 26, 23, 0.12);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .screenshot-frame:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 40px -10px rgba(244, 122, 32, 0.18);
+    }
+
+    .browser-chrome {
+      height: 34px;
+      background: var(--bg-sidebar);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    .browser-dots {
+      display: flex;
+      gap: 7px;
+    }
+
+    .browser-dots span {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot-r { background: #ef4444; }
+    .dot-y { background: #f59e0b; }
+    .dot-g { background: #22c55e; }
+
+    .browser-url {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: #d6c8be;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 3px 12px;
+      border-radius: var(--radius-pill);
+    }
+
+    .zoom-hint {
+      font-size: 11.5px;
+      color: var(--brand-orange);
+      letter-spacing: 0.03em;
+    }
+
+    .screenshot-img-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #14110f;
+      padding: 10px;
+    }
+
+    .screenshot-img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 14px;
+    }
+
+    .details-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 18px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .info-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 22px 24px;
+    }
+
+    .info-card h3 {
+      font-size: 14px;
+      font-weight: 400;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--brand-orange);
+      margin-bottom: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--brand-orange-soft);
+      padding: 5px 14px;
+      border-radius: var(--radius-pill);
+    }
+
+    .info-card p {
+      font-size: 16px;
+      line-height: 1.65;
+      color: var(--text-secondary);
+    }
+
+    .info-card ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .info-card li {
+      font-size: 15.5px;
+      line-height: 1.55;
+      color: var(--text-primary);
+      padding-left: 22px;
+      position: relative;
+    }
+
+    .info-card li::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--brand-orange);
+      position: absolute;
+      left: 2px;
+      top: 8px;
+    }
+
+    .info-card strong {
+      color: var(--brand-orange);
+      font-weight: 400;
+    }
+
+    .info-card code {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      background: var(--bg-surface);
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* Fullscreen Lightbox Modal */
+    .lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 17, 15, 0.92);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      cursor: zoom-out;
+    }
+
+    .lightbox.open {
+      display: flex;
+    }
+
+    .lightbox img {
+      max-width: 95vw;
+      max-height: 91vh;
+      object-fit: contain;
+      border-radius: var(--radius-lg);
+      border: 2px solid var(--brand-orange);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <div class="deck-topbar-wrap">
+    <header class="deck-topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark">KN</div>
+        <div>
+          <div class="brand-title">Kazyon NetOps — System Feature Presentation</div>
+          <div class="brand-subtitle">IT Network Support AI Agent &amp; Ticketing Harness · 12 Console Screens</div>
+        </div>
+      </div>
+
+      <div class="deck-controls">
+        <select id="slideSelect" class="slide-jump-select" aria-label="Jump to slide"></select>
+        <button class="btn-control" id="prevBtn" title="Previous Slide (Left Arrow)">← Prev</button>
+        <span class="slide-counter" id="slideCounter">1 / 13</span>
+        <button class="btn-control" id="nextBtn" title="Next Slide (Right Arrow)">Next →</button>
+        <button class="btn-control" id="themeBtn" title="Toggle Light/Dark Mode">◐ Theme</button>
+      </div>
+    </header>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <!-- Slide Deck Viewport -->
+  <main class="deck-viewport">
+
+    <!-- SLIDE 0: EXECUTIVE OVERVIEW -->
+    <section class="slide active" data-title="00 · Executive Overview">
+      <div class="cover-layout">
+        <div>
+          <span class="eyebrow">Kazyon Plus · Enterprise NOC Platform</span>
+          <h1 class="cover-title">IT Network Support AI Agent &amp; Ticketing Harness</h1>
+          <p class="cover-lead">
+            An autonomous L1/L2 Network Operations platform for Kazyon Plus Egypt’s 1,150+ stores. It detects offline branches, runs automated router and 4G checks, and dispatches bilingual ISP tickets with human safety guardrails.
+          </p>
+
+          <div class="kpi-strip">
+            <div class="kpi-box">
+              <div class="kpi-value">1,150+</div>
+              <div class="kpi-label">Retail Stores</div>
+            </div>
+            <div class="kpi-box">
+              <div class="kpi-value">12</div>
+              <div class="kpi-label">Console Screens</div>
+            </div>
+            <div class="kpi-box">
+              <div class="kpi-value">4 ISPs</div>
+              <div class="kpi-label">WE · Orange · VF · Etisalat</div>
+            </div>
+          </div>
+
+          <div class="info-card">
+            <h3>Autonomous 3-Step Loop</h3>
+            <ul>
+              <li><strong>1. Ingest:</strong> Parses hourly SQL Replication reports to flag Critical (&gt;24h) and High (3–24h) lagging branches.</li>
+              <li><strong>2. Diagnose:</strong> Probes FortiGate SD-WAN, Cisco routers, and 4G modems in parallel to isolate the root cause.</li>
+              <li><strong>3. Escalate &amp; Close:</strong> Sends bilingual Arabic/English ISP emails, tracks Reference IDs, and verifies recovery before closing.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_02_dashboard.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">kazyon-netops://console/dashboard</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_02_dashboard.png" alt="Executive Dashboard Preview">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 1: LOGIN -->
+    <section class="slide" data-title="01 · Operator Login & Security">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 01 of 12 · Authentication</span>
+          <h2>Operator Login &amp; Security Context</h2>
+          <p class="slide-subtitle">Role-based authentication portal with live fleet telemetry and instant role presets.</p>
+        </div>
+        <span class="route-badge">LoginView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_01_login.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">POST /api/v1/auth/login</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_01_login.png" alt="Page 1 Operator Login">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Verifies NOC credentials via <code>POST /api/v1/auth/login</code> and issues a signed JWT token tied to the operator’s role (<code>admin</code>, <code>dispatcher</code>, or <code>viewer</code>) to unlock authorized console views.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Role-Gated Sessions:</strong> Protects every API action and screen based on user permissions.</li>
+              <li><strong>1-Click Demo Presets:</strong> Switches between Admin, L2 Dispatcher, and Viewer roles for quick testing.</li>
+              <li><strong>Live Fleet Summary:</strong> Shows store coverage (<code>1,150+</code>) and mean diagnostic speed (<code>42s</code>) at a glance.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: EXECUTIVE & SLA DASHBOARD -->
+    <section class="slide" data-title="02 · Executive & SLA Dashboard">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 02 of 12 · Command Center</span>
+          <h2>Executive &amp; SLA Dashboard</h2>
+          <p class="slide-subtitle">Real-time macro health across 1,150+ branches, ISP outage splits, and SLA countdowns.</p>
+        </div>
+        <span class="route-badge">DashboardView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_02_dashboard.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/tickets/dashboard/summary</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_02_dashboard.png" alt="Page 2 Executive Dashboard">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Polls <code>GET /api/v1/tickets/dashboard/summary</code> every 30 seconds to aggregate active tickets by priority, root cause, and ISP carrier (WE, Orange, Vodafone, Etisalat).</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Executive KPI Cards:</strong> Tracks Active Tickets, Critical/High counts, Human Review queue, and SLA compliance.</li>
+              <li><strong>ISP Outage Breakdown:</strong> Highlights which telecom carrier is causing the most store disruptions.</li>
+              <li><strong>SLA Breach Watchlist:</strong> Ranks urgent open tickets with live countdown timers and 1-click drill-down.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: KANBAN BOARD -->
+    <section class="slide" data-title="03 · Incident Kanban Board">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 03 of 12 · Incident Workflow</span>
+          <h2>Incident Kanban Board</h2>
+          <p class="slide-subtitle">6-stage autonomous lifecycle board with carrier filters and live SLA timers.</p>
+        </div>
+        <span class="route-badge">KanbanBoardView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_03_kanban_board.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/tickets/kanban</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_03_kanban_board.png" alt="Page 3 Incident Kanban Board">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Organizes every active incident from <code>GET /api/v1/tickets/kanban</code> across the 6 state-machine stages: <code>NEW</code> → <code>DIAGNOSING</code> → <code>WAITING_ISP</code> → <code>ESCALATED_HUMAN</code> → <code>MONITORING</code> → <code>RESOLVED</code>.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Live Workflow Swimlanes:</strong> Tracks tickets as the AI agent diagnoses and escalates them automatically.</li>
+              <li><strong>Instant Carrier &amp; Priority Filters:</strong> Isolates Critical outages or specific ISPs in one click.</li>
+              <li><strong>Manual Ticket Creation:</strong> Lets operators open an incident for any branch and launch instant diagnostics.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: TICKETS LIST & EXPORT -->
+    <section class="slide" data-title="04 · Tickets List & CSV Export">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 04 of 12 · Audit &amp; Reporting</span>
+          <h2>Tickets List &amp; CSV Export</h2>
+          <p class="slide-subtitle">Searchable tabular incident register with multi-filter controls and CSV export.</p>
+        </div>
+        <span class="route-badge">TicketsListView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_04_tickets_list.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/tickets</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_04_tickets_list.png" alt="Page 4 Tickets List & Export">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Queries <code>GET /api/v1/tickets</code> and filters incidents by store code, governorate, ISP carrier, workflow state, priority, or root-cause classification.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Fast Multi-Filter Search:</strong> Combines text search with Status and Priority dropdowns.</li>
+              <li><strong>Side-by-Side SLA Inspection:</strong> Compares replication lag hours, root causes, and SLA timers in a clean table.</li>
+              <li><strong>1-Click CSV Export:</strong> Downloads the filtered incident view for management reports and ISP SLA audits.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: TICKET 360 DETAIL -->
+    <section class="slide" data-title="05 · Ticket 360° Investigation Detail">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 05 of 12 · Deep-Dive Workbench</span>
+          <h2>Ticket 360° Investigation Detail</h2>
+          <p class="slide-subtitle">All-in-one L1/L2 view uniting store topology, probe telemetry, ISP emails, and audit logs.</p>
+        </div>
+        <span class="route-badge">TicketDetailView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_05_ticket_detail.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/tickets/{ticket_id}</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_05_ticket_detail.png" alt="Page 5 Ticket 360 Detail">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Combines branch circuit data, FortiGate/Cisco/4G diagnostic output, bilingual ISP emails, and audit history from <code>GET /api/v1/tickets/{id}</code> into one screen.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Live Probe Telemetry:</strong> Triggers L1/L2 network checks and displays packet loss, latency, and 4G signal levels.</li>
+              <li><strong>Direct ISP &amp; L2 Actions:</strong> Sends bilingual ISP escalations, routes to Human Review, or verifies recovery.</li>
+              <li><strong>Full Audit Timeline:</strong> Logs every automated check, email, and engineer note chronologically.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: REPLICATION MONITOR -->
+    <section class="slide" data-title="06 · Replication Lag Monitor">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 06 of 12 · Ingestion Engine</span>
+          <h2>Replication Lag Monitor</h2>
+          <p class="slide-subtitle">Parses hourly SQL Replication HTML reports, grades store lag, and auto-spawns tickets.</p>
+        </div>
+        <span class="route-badge">ReplicationMonitorView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_06_replication_monitor.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">POST /api/v1/replication/parse</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_06_replication_monitor.png" alt="Page 6 Replication Monitor">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Sends Replication Dashboard HTML tables to <code>POST /api/v1/replication/parse</code>, extracting store sync lag and automatically opening or updating tickets for Critical (&gt;24h) and High (3–24h) branches.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Fleet Health Bar:</strong> Visualizes Synced (&lt;1h), Low (1–3h), High (3–24h), and Critical (&gt;24h) stores.</li>
+              <li><strong>Smart Deduplication:</strong> Updates existing open tickets instead of creating duplicates on hourly runs.</li>
+              <li><strong>Recovery Detection:</strong> Flags open tickets whose stores have returned to normal sync for auto-closure.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: HUMAN REVIEW QUEUE -->
+    <section class="slide" data-title="07 · Human Review & Guardrail Queue">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 07 of 12 · Safety Guardrails</span>
+          <h2>Human Review &amp; Guardrail Queue</h2>
+          <p class="slide-subtitle">Dedicated L2 queue for total blackouts, internal LAN faults, and low-confidence cases.</p>
+        </div>
+        <span class="route-badge">HumanReviewView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_07_human_review.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/tickets?status=ESCALATED_HUMAN</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_07_human_review.png" alt="Page 7 Human Review Queue">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Holds all <code>ESCALATED_HUMAN</code> tickets where safety rules stop automated ISP emails—such as total site power blackouts or internal store switch failures.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Clear Escalation Context:</strong> Explains why automation paused and shows the AI’s recommended action.</li>
+              <li><strong>1-Click Engineer Decisions:</strong> Return to ISP queue, re-run diagnostics, or resolve after on-site repair.</li>
+              <li><strong>Audit Note Capture:</strong> Records operator sign-off notes directly into the ticket history.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: MAILBOX & EMAIL TRIAGE -->
+    <section class="slide" data-title="08 · Mailbox & Email Triage">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 08 of 12 · Exchange Mail Engine</span>
+          <h2>Mailbox &amp; Email Triage Console</h2>
+          <p class="slide-subtitle">3-folder email inspector and simulator for Replication alerts, ISP replies, and dispatches.</p>
+        </div>
+        <span class="route-badge">MailboxTriageView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_08_mailbox_triage.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">POST /api/v1/emails/ingest</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_08_mailbox_triage.png" alt="Page 8 Mailbox & Email Triage">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Syncs with Exchange IMAP/SMTP to classify messages into Replication Reports, ISP Replies, and Outbound Dispatches while extracting carrier Reference IDs via regex.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>3-Folder Split Reader:</strong> Inspects HTML replication reports, carrier replies, and bilingual outbound tickets.</li>
+              <li><strong>On-Demand Mailbox Sync:</strong> Triggers an immediate IMAP poll cycle without waiting for the timer.</li>
+              <li><strong>Inbound Email Simulator:</strong> Injects test ISP replies to verify ticket matching and reference extraction.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: NETWORK DIAGNOSTICS SANDBOX -->
+    <section class="slide" data-title="09 · Network Diagnostics Sandbox">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 09 of 12 · Interactive Probe Runner</span>
+          <h2>Network Diagnostics Sandbox</h2>
+          <p class="slide-subtitle">On-demand L1/L2 test bench for FortiGate SD-WAN, Cisco routers, and 4G failover.</p>
+        </div>
+        <span class="route-badge">DiagnosticsSandboxView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_09_diagnostics_sandbox.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">POST /api/v1/diagnostics/run</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_09_diagnostics_sandbox.png" alt="Page 9 Network Diagnostics Sandbox">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Runs standalone probe pipelines via <code>POST /api/v1/diagnostics/run</code> against any store using live adapters or fault presets without altering active tickets.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>6 Fault Presets:</strong> Tests Local Loop Down on 4G, Packet Loss, ISP Backbone Outage, Weak 4G Signal, LAN Fault, or Blackout.</li>
+              <li><strong>4-Probe Telemetry View:</strong> Displays FortiGate tunnel state, Cisco interface counters, 4G signal dBm, and ping RTT.</li>
+              <li><strong>Instant Verdict Badge:</strong> Outputs the root-cause classification, confidence score, and next step.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: BRANCHES & ISP DIRECTORY -->
+    <section class="slide" data-title="10 · Branches & ISP Directory">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 10 of 12 · Topology Registry</span>
+          <h2>Branches &amp; ISP Directory</h2>
+          <p class="slide-subtitle">Master inventory for 1,150+ stores, WAN circuit IDs, device IPs, and ISP escalation contacts.</p>
+        </div>
+        <span class="route-badge">DirectoryView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_10_branches_isps.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/branches · GET /api/v1/isps</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_10_branches_isps.png" alt="Page 10 Branches & ISP Directory">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Provides the master topology database (<code>GET /api/v1/branches</code> &amp; <code>/isps</code>) that maps any store code to its governorate, circuit IDs, device IPs, and carrier support desk.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Fast Store Lookup:</strong> Searches across 1,150+ stores by code, name, governorate, or ISP carrier.</li>
+              <li><strong>Circuit &amp; IP Inventory:</strong> Shows primary landline IDs, 4G backup numbers, and FortiGate/Cisco IPs.</li>
+              <li><strong>ISP Contact Cards:</strong> Lists escalation emails, account IDs, and SLA targets for WE, Orange, Vodafone, and Etisalat.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11: USERS, ROLES & RBAC -->
+    <section class="slide" data-title="11 · Users, Roles & RBAC Matrix">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 11 of 12 · Access Control</span>
+          <h2>Users, Roles &amp; RBAC Matrix</h2>
+          <p class="slide-subtitle">Operator account management and permission matrix across Admin, Dispatcher, and Viewer roles.</p>
+        </div>
+        <span class="route-badge">UsersRbacView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_11_users_rbac.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET /api/v1/auth/users</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_11_users_rbac.png" alt="Page 11 Users, Roles & RBAC">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Manages NOC accounts via <code>/api/v1/auth/users</code> and enforces 3 permission tiers across both FastAPI endpoints and React console actions.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>Account Provisioning:</strong> Creates users, updates role assignments, resets passwords, and toggles active status.</li>
+              <li><strong>Clear Permission Matrix:</strong> Compares exact capabilities for <code>Admin</code>, <code>Dispatcher</code>, and <code>Viewer</code> roles.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 12: AI, MAILBOX & SLA SETTINGS -->
+    <section class="slide" data-title="12 · AI, Mailbox & SLA Settings">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <span class="eyebrow">Screen 12 of 12 · Runtime Control Plane</span>
+          <h2>AI, Mailbox &amp; SLA Settings</h2>
+          <p class="slide-subtitle">Live configuration for AI confidence thresholds, Exchange polling, and SLA timers.</p>
+        </div>
+        <span class="route-badge">SettingsView.tsx</span>
+      </div>
+      <div class="feature-body">
+        <div class="screenshot-frame" onclick="openLightbox('./presentation_screenshots/page_12_ai_sla_settings.png')">
+          <div class="browser-chrome">
+            <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+            <span class="browser-url">GET / PUT /api/v1/settings</span>
+            <span class="zoom-hint">Click to zoom ⤢</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="./presentation_screenshots/page_12_ai_sla_settings.png" alt="Page 12 AI, Mailbox & SLA Settings">
+          </div>
+        </div>
+        <div class="details-col">
+          <div class="info-card">
+            <h3>How It Works</h3>
+            <p>Reads and saves runtime settings via <code>GET / PUT /api/v1/settings</code> so admins can tune AI autonomy, mail polling, and SLA rules without restarting the server.</p>
+          </div>
+          <div class="info-card">
+            <h3>What It Can Do</h3>
+            <ul>
+              <li><strong>AI Guardrail Tuning:</strong> Sets the LLM model, minimum confidence score for auto-dispatch, and recovery checks.</li>
+              <li><strong>Mailbox &amp; Adapter Modes:</strong> Switches between Mock simulation and Live hardware/Exchange adapters.</li>
+              <li><strong>SLA &amp; Retry Rules:</strong> Adjusts Critical (&gt;24h) and High (3–24h) cutoffs, SLA hours, and max ISP follow-ups.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Fullscreen Lightbox for Screenshots -->
+  <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="Enlarged Screenshot">
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const selectEl = document.getElementById('slideSelect');
+    const counterEl = document.getElementById('slideCounter');
+    const progressEl = document.getElementById('progressFill');
+    let currentIndex = 0;
+
+    slides.forEach((slide, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      opt.textContent = slide.dataset.title || `Slide ${idx + 1}`;
+      selectEl.appendChild(opt);
+    });
+
+    function showSlide(index) {
+      if (index < 0) index = slides.length - 1;
+      if (index >= slides.length) index = 0;
+      currentIndex = index;
+
+      slides.forEach((s, i) => s.classList.toggle('active', i === currentIndex));
+      selectEl.value = currentIndex;
+      counterEl.textContent = `${currentIndex + 1} / ${slides.length}`;
+      progressEl.style.width = `${((currentIndex + 1) / slides.length) * 100}%`;
+    }
+
+    document.getElementById('prevBtn').addEventListener('click', () => showSlide(currentIndex - 1));
+    document.getElementById('nextBtn').addEventListener('click', () => showSlide(currentIndex + 1));
+    selectEl.addEventListener('change', (e) => showSlide(Number(e.target.value)));
+
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.body.classList.toggle('dark');
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (document.getElementById('lightbox').classList.contains('open')) {
+        if (e.key === 'Escape') closeLightbox();
+        return;
+      }
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') showSlide(currentIndex + 1);
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') showSlide(currentIndex + 1 * -1);
+    });
+
+    function openLightbox(src) {
+      const lb = document.getElementById('lightbox');
+      document.getElementById('lightboxImg').src = src;
+      lb.classList.add('open');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('open');
+    }
+
+    showSlide(0);
+  </script>
+</body>
+</html>
