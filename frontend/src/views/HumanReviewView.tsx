@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import { AppShell, Badge, IspBadge, IspName } from "../design-system";
-import { EscalationItemDTO, escalationsApi, ticketsApi } from "../lib/api";
+import {
+  EscalationItemDTO,
+  escalationsApi,
+  settingsApi,
+  ticketsApi,
+} from "../lib/api";
 import { ConsoleViewProps } from "./types";
 
 const ESCALATION_REASONS = [
@@ -27,6 +32,8 @@ export function HumanReviewView({
   canAccessNav,
 }: ConsoleViewProps) {
   const [items, setItems] = useState<EscalationItemDTO[]>([]);
+  const [configuredEngineerEmail, setConfiguredEngineerEmail] =
+    useState<string>("");
   const [reason, setReason] = useState<string>("ALL");
   const [doneKeys, setDoneKeys] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<string | null>(null);
@@ -35,6 +42,14 @@ export function HumanReviewView({
     escalationsApi
       .list()
       .then((res) => setItems(res))
+      .catch(() => {});
+    settingsApi
+      .get()
+      .then((s) => {
+        const primary =
+          s.fallback_contacts?.[0]?.email || s.admin_notification_email || "";
+        if (primary) setConfiguredEngineerEmail(primary);
+      })
       .catch(() => {});
   }, []);
 
@@ -131,7 +146,12 @@ export function HumanReviewView({
           </p>
         </div>
         <span className="kz-tcard-meta">
-          On duty: <b style={{ color: "var(--ink)" }}>noc-oncall@kazyon.com</b>
+          On duty:{" "}
+          <b style={{ color: "var(--ink)" }}>
+            {configuredEngineerEmail ||
+              items[0]?.engineer_email ||
+              "noc-oncall@kazyon.com"}
+          </b>
         </span>
       </div>
 

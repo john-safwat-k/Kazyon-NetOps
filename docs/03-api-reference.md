@@ -214,13 +214,23 @@ These are the settings the agent actually runs with:
 
 ### `GET /api/v1/settings`
 - **Auth:** `require_permission("settings:read")`
-- **Response (`200 OK`):** `SystemSettingsDto`. It includes `smtp_security` (`starttls` | `ssl` | `none`), `smtp_enabled`, `smtp_credentials_configured` (`true` when the environment login is set; the values are never returned), `admin_notification_email`, `notify_admin_on_every_action` (`true` by default), and `require_admin_approval_before_action` (`false` = Autonomous Mode, `true` = Approval Mode).
+- **Response (`200 OK`):** `SystemSettingsDto`. It includes `smtp_security` (`starttls` | `ssl` | `none`), `smtp_enabled`, `smtp_credentials_configured` (`true` when the environment login is set; the values are never returned), `admin_notification_email`, `notify_admin_on_every_action` (`true` by default), `require_admin_approval_before_action` (`false` = Autonomous Mode, `true` = Approval Mode), and Proactive Fleet Scan controls (`fleet_scan_enabled`, `fleet_scan_interval_minutes` default `180`, `fleet_scan_window_start` default `08:00`, `fleet_scan_window_end` default `23:00`, `fleet_scan_mass_outage_pct` default `5`).
 
 ### `PUT /api/v1/settings`
 - **Auth:** `require_permission("settings:update")`
-- **Request:** `SystemSettingsUpdateRequest`. All fields are optional, and omitted fields keep their value.
-- **Validation:** out-of-range values give `422`. For example: port outside 1–65535, `smtp_security` not one of the three modes, a `vllm_endpoint` that is not `http(s)://`, `diagnostic_timeout_sec` outside 2–60, or temperature outside 0–2.
+- **Request:** `SystemSettingsUpdateRequest`. All fields are optional, and omitted fields keep their value. When `fleet_scan_enabled` is set to `false` or `global_ai_kill_switch` is set to `true`, any in-progress scheduled fleet scan task is immediately cancelled (`cancel_active_fleet_scan()`).
+- **Validation:** out-of-range values give `422`. For example: port outside 1–65535, `smtp_security` not one of the three modes, a `vllm_endpoint` that is not `http(s)://`, `diagnostic_timeout_sec` outside 2–60, temperature outside 0–2, or `fleet_scan_interval_minutes` outside 15–1440.
 - **Response (`200 OK`):** `SystemSettingsDto`. The change is recorded in `audit_logs` (`settings.updated`) with the list of changed fields.
+
+### `GET /api/v1/settings/fleet-scans`
+- **Auth:** `require_permission("settings:read")`
+- **Query Params:** `limit` (`1..50`, default `10`)
+- **Response (`200 OK`):** `{ "status": FleetScanStatusDto, "runs": list[FleetScanRunDto] }` returning live scheduler telemetry (`enabled`, `global_ai_kill_switch`, `running`, `interval_minutes`, `window_start`, `window_end`, `within_store_window`, `mass_outage_pct`, `last_run_at`, `next_run_due_at`, `minutes_until_next`) and recent `FleetScanRun` records.
+
+### `POST /api/v1/settings/fleet-scans/run-now`
+- **Auth:** `require_permission("settings:update")`
+- **Body (optional):** `FleetScanTriggerRequest` (`dry_run` default `false`, `simulate_scenario` default `"AUTO"`, `limit` default `2000`)
+- **Response (`200 OK`):** `FleetScanRunDto`. Runs the full Dual-Ping (`IP 1` + `IP 2`) + 4G Hub Traceroute diagnostic suite across active branches, performs a 4-ping confirmation re-test on failing sites, checks the `fleet_scan_mass_outage_pct` circuit breaker, skips open-ticket duplicates, and initiates per-diagnosis autonomous ticket flows (`FULL_OUTAGE` -> `AWAITING_REGIONAL_IT`, `LOCAL_LOOP_DOWN_ON_4G` -> `ESCALATED_TO_ISP`, `INTERNAL_LAN_SWITCH` -> `INTERNAL_LAN_ISSUE`).
 
 ### `POST /api/v1/settings/test-smtp`
 - **Auth:** `require_permission("settings:read")`

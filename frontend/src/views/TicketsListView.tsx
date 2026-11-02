@@ -338,6 +338,7 @@ export function TicketsListView({
           <option value="All">Trigger: All</option>
           <option value="DIRECT_EMAIL">DIRECT_EMAIL</option>
           <option value="REPLICATION_DASHBOARD">REPLICATION_DASHBOARD</option>
+          <option value="PROACTIVE_SCAN">PROACTIVE_SCAN</option>
           <option value="UNKNOWN_ESCALATION">UNKNOWN_ESCALATION</option>
         </select>
 

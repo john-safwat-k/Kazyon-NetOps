@@ -68,7 +68,7 @@ class TicketEmailReplyRequest(BaseModel):
 
 
 class TicketEscalateHumanRequest(BaseModel):
-    target_email: str = "noc-oncall@kazyon.com"
+    target_email: Optional[str] = None
     reason: str = "OTHER"
     note: str = ""
 
@@ -132,6 +132,7 @@ class TicketDetail360Response(BaseModel):
     diagnostic_runs: list[dict[str, Any]]
     branch_emails: list[TicketEmailItemDto]
     isp_emails: list[TicketEmailItemDto]
+    fallback_contacts: list[dict[str, str]] = Field(default_factory=list)
 
 
 class DashboardSummaryResponse(BaseModel):
@@ -178,6 +179,11 @@ class SystemSettingsDto(BaseModel):
     admin_notification_email: str = "admin@kazyon.com"
     notify_admin_on_every_action: bool = True
     require_admin_approval_before_action: bool = False
+    fleet_scan_enabled: bool = False
+    fleet_scan_interval_minutes: int = 180
+    fleet_scan_window_start: str = "08:00"
+    fleet_scan_window_end: str = "23:00"
+    fleet_scan_mass_outage_pct: int = 5
     mailbox_account: str
     smtp_host: str
     smtp_port: int
@@ -213,6 +219,15 @@ class SystemSettingsUpdateRequest(BaseModel):
     admin_notification_email: Optional[str] = Field(default=None, max_length=255)
     notify_admin_on_every_action: Optional[bool] = None
     require_admin_approval_before_action: Optional[bool] = None
+    fleet_scan_enabled: Optional[bool] = None
+    fleet_scan_interval_minutes: Optional[int] = Field(default=None, ge=15, le=1440)
+    fleet_scan_window_start: Optional[str] = Field(
+        default=None, max_length=5, pattern=r"^([01]\d|2[0-3]):[0-5]\d$"
+    )
+    fleet_scan_window_end: Optional[str] = Field(
+        default=None, max_length=5, pattern=r"^([01]\d|2[0-3]):[0-5]\d$"
+    )
+    fleet_scan_mass_outage_pct: Optional[int] = Field(default=None, ge=1, le=100)
     mailbox_account: Optional[str] = Field(default=None, min_length=3, max_length=255)
     smtp_host: Optional[str] = Field(default=None, max_length=255)
     smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)
@@ -237,6 +252,40 @@ class SystemSettingsUpdateRequest(BaseModel):
     ping_count: Optional[int] = Field(default=None, ge=1, le=20)
     traceroute_max_hops: Optional[int] = Field(default=None, ge=1, le=64)
     fallback_contacts: Optional[list[dict[str, str]]] = None
+
+
+class FleetScanRunDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    suite_id: Optional[str] = None
+    triggered_by: str
+    status: str
+    total_branches: int
+    failing_initial: int
+    recovered_on_retest: int
+    confirmed_down: int
+    duplicates_skipped: int
+    created_ticket_numbers: list[str] = Field(default_factory=list)
+    summary: str
+    details_json: dict[str, Any] = Field(default_factory=dict)
+    started_at: str
+    finished_at: Optional[str] = None
+
+
+class FleetScanTriggerRequest(BaseModel):
+    dry_run: bool = False
+    limit: int = Field(default=2000, ge=1, le=5000)
+    simulate_scenario: Optional[
+        Literal[
+            "LIVE_ICMP",
+            "AUTO",
+            "PASS",
+            "FULL_OUTAGE",
+            "LOCAL_LOOP_DOWN_ON_4G",
+            "INTERNAL_LAN_SWITCH",
+        ]
+    ] = None
 
 
 class SmtpConnectionTestRequest(BaseModel):
@@ -264,12 +313,18 @@ class SmtpConnectionTestResult(BaseModel):
 
 
 class SendTestEmailRequest(BaseModel):
-    """Send a live test email via configured SMTP."""
+    """Send a live test email via configured SMTP, optionally overridden by unsaved form values."""
 
     recipient: Optional[str] = Field(default=None, max_length=255)
     subject: Optional[str] = Field(default=None, max_length=255)
     body_text: Optional[str] = Field(default=None, max_length=4000)
     branch_code: str = Field(default="1084", max_length=16)
+    smtp_host: Optional[str] = Field(default=None, max_length=255)
+    smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    smtp_security: Optional[SmtpSecurity] = None
+    smtp_username: Optional[str] = Field(default=None, max_length=255)
+    smtp_password: Optional[str] = Field(default=None, max_length=255)
+    mailbox_account: Optional[str] = Field(default=None, max_length=255)
 
 
 class SendTestEmailResult(BaseModel):

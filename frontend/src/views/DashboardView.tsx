@@ -56,7 +56,7 @@ export function DashboardView({
       state: "ok",
     },
     {
-      name: "SMTP Mailbox (noc@kazyon.com)",
+      name: "SMTP Mailbox",
       detail: "Service account active",
       state: "ok",
     },

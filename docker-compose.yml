@@ -46,6 +46,7 @@ services:
       # Live code & SPA mounts for rapid iteration and clean volume updates
       - ./backend:/app/backend
       - ./frontend/dist:/app/frontend/dist
+      - ./Info:/app/Info:ro
       # Persistent runtime storage (uploaded branch sheets, diagnostic logs)
       - ./data:/app/data
       # Optional TLS certs directory (read-only)

@@ -122,6 +122,11 @@ def _ensure_sqlite_dev_columns() -> None:
             ("admin_notification_email", "VARCHAR(255) NOT NULL DEFAULT 'admin@kazyon.com'"),
             ("notify_admin_on_every_action", "BOOLEAN NOT NULL DEFAULT 1"),
             ("require_admin_approval_before_action", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("fleet_scan_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("fleet_scan_interval_minutes", "INTEGER NOT NULL DEFAULT 180"),
+            ("fleet_scan_window_start", "VARCHAR(5) NOT NULL DEFAULT '08:00'"),
+            ("fleet_scan_window_end", "VARCHAR(5) NOT NULL DEFAULT '23:00'"),
+            ("fleet_scan_mass_outage_pct", "INTEGER NOT NULL DEFAULT 5"),
         ],
     }
     with engine.begin() as conn:

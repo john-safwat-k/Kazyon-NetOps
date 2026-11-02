@@ -292,6 +292,7 @@ export function KanbanBoardView({
             <option>All</option>
             <option>DIRECT_EMAIL</option>
             <option>REPLICATION_DASHBOARD</option>
+            <option>PROACTIVE_SCAN</option>
           </select>
         </label>
 

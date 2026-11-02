@@ -30,9 +30,14 @@ from app.common.exceptions import (
     LLMInferenceError,
     SupportAgentError,
 )
-from app.diagnostics.base import DualPingTracerouteRequest
-from app.diagnostics.service import run_and_persist_diagnostics
+from app.diagnostics.base import DiagnosticSuiteRunRequest, DualPingTracerouteRequest
+from app.diagnostics.executor import execute_dual_ping_and_traceroute
+from app.diagnostics.service import (
+    run_and_persist_diagnostics,
+    run_full_branch_diagnostic_suite,
+)
 from app.directory.models import Branch
+from app.directory.seeder import derive_branch_ips
 from app.directory.service import ensure_directory_seeded, find_branch_by_hint, get_branch_by_code
 from app.email_engine.imap_poller import enqueue_llm_retry_eml
 from app.email_engine.loop_guard import is_auto_submitted_email
@@ -52,10 +57,14 @@ from app.email_engine.smtp_sender import (
     dispatch_admin_action_email,
     dispatch_outbound_email,
     format_isp_escalation_email,
+    resolve_admin_notification_email,
     resolve_branch_regional_it_cc,
+    resolve_fallback_engineer_email,
     resolve_isp_recipients,
 )
 from app.ticketing.models import (
+    DiagnosticRun,
+    FleetScanRun,
     ReplicationReport,
     ReplicationReportRow,
     SystemSettings,
@@ -64,6 +73,7 @@ from app.ticketing.models import (
     TicketEvent,
 )
 from app.ticketing.service import (
+    FAILURE_DISPLAY_NAMES,
     apply_loop_guard_trip,
     apply_or_queue_ticket_action,
     ensure_operational_seed_data,
@@ -547,11 +557,7 @@ async def ingest_and_triage_eml(
     settings_row = ensure_system_settings(db)
     llm_options = vllm_call_options(settings_row)
 
-    fallback_engineer = (
-        settings_row.fallback_contacts[0]["email"]
-        if settings_row.fallback_contacts and settings_row.fallback_contacts[0].get("email")
-        else "noc-oncall@kazyon.com"
-    )
+    fallback_engineer = resolve_fallback_engineer_email(settings_row)
 
     envelope: EmailEnvelope = parse_eml_bytes(raw_eml_bytes)
     original_message_id = envelope.message_id
@@ -2391,21 +2397,13 @@ async def trigger_email_in_loop(
     if linked_ticket is None and branch is not None:
         linked_ticket = _find_open_ticket_for_branch(db, branch.id)
 
+    settings_row = ensure_system_settings(db)
     sap = branch.branch_code if branch else (branch_code or "2009")
     store_name = branch.name if branch else f"{sap}-Store"
     isp_name = (branch.isp_name if branch else "NOOR").upper()
-    isp_sender = (
-        branch.isp_contact_mail
-        if branch and branch.isp_contact_mail
-        else (
-            "ccc-eg@orange.com"
-            if isp_name == "ORANGE"
-            else ("psupport@te.eg" if isp_name == "WE" else "noc@noor.net")
-        )
-    )
-    reg_it_sender = (
-        branch.regional_it_email if branch and branch.regional_it_email else "GITSupport@kazyon.com"
-    )
+    isp_to_list, _isp_cc_list = resolve_isp_recipients(branch, db=db)
+    isp_sender = isp_to_list[0] if isp_to_list else "noc@noor.net"
+    reg_it_sender = resolve_branch_regional_it_cc(branch, db=db)[0]
     ll_id = branch.ll_circuit_id if branch and branch.ll_circuit_id else f"QUO1-1031{sap}"
     g3_id = branch.backup_circuit_id if branch and branch.backup_circuit_id else f"620{sap}"
 
@@ -2600,7 +2598,7 @@ async def trigger_email_in_loop(
 
     raw_eml = build_synthetic_eml_bytes(
         sender=sender,
-        recipients=["noc@kazyon.com"],
+        recipients=[settings_row.mailbox_account or "noc@kazyon.com"],
         subject=subject,
         body_text=body_text,
         body_html=body_html,
@@ -2629,9 +2627,10 @@ async def reclassify_existing_email(
 
         raise EntityNotFoundError("TicketEmail", str(email_id))
 
+    settings_row = ensure_system_settings(db)
     raw_eml = build_synthetic_eml_bytes(
         sender=em.sender,
-        recipients=list(em.recipients or ["noc@kazyon.com"]),
+        recipients=list(em.recipients or [settings_row.mailbox_account or "noc@kazyon.com"]),
         cc=list(em.cc or []),
         subject=em.subject,
         body_text=em.body_text,
@@ -2640,7 +2639,6 @@ async def reclassify_existing_email(
         attachment_filenames=[str(a.get("filename", "")) for a in (em.attachments_json or [])],
     )
     env = parse_eml_bytes(raw_eml)
-    settings_row = ensure_system_settings(db)
     ticket = db.get(Ticket, em.ticket_id) if em.ticket_id else None
     branch = db.get(Branch, ticket.branch_id) if ticket and ticket.branch_id else None
 
@@ -2665,3 +2663,555 @@ async def reclassify_existing_email(
         "ticket_number": ticket.ticket_number if ticket else "—",
         "triage": triage.model_dump(),
     }
+
+
+def serialize_fleet_scan_run(run: FleetScanRun) -> dict[str, Any]:
+    """Convert a `FleetScanRun` ORM instance into a serializable dictionary matching `FleetScanRunDto`."""
+    started = (
+        run.started_at
+        if run.started_at and run.started_at.tzinfo
+        else (
+            run.started_at.replace(tzinfo=timezone.utc)
+            if run.started_at
+            else datetime.now(timezone.utc)
+        )
+    )
+    finished = (
+        run.finished_at
+        if run.finished_at and run.finished_at.tzinfo
+        else (run.finished_at.replace(tzinfo=timezone.utc) if run.finished_at else None)
+    )
+    return {
+        "id": run.id,
+        "suite_id": run.suite_id,
+        "triggered_by": run.triggered_by,
+        "status": run.status,
+        "total_branches": run.total_branches,
+        "failing_initial": run.failing_initial,
+        "recovered_on_retest": run.recovered_on_retest,
+        "confirmed_down": run.confirmed_down,
+        "duplicates_skipped": run.duplicates_skipped,
+        "created_ticket_numbers": list(run.created_ticket_numbers or []),
+        "summary": run.summary,
+        "details_json": dict(run.details_json or {}),
+        "started_at": started.isoformat(),
+        "finished_at": finished.isoformat() if finished else None,
+    }
+
+
+async def run_proactive_fleet_scan(
+    db: Session,
+    *,
+    triggered_by: str = "SCHEDULER",
+    dry_run: bool = False,
+    limit: int = 2000,
+    simulate_scenario: Optional[str] = None,
+) -> dict[str, Any]:
+    """Execute the Proactive 3-Hour Full Fleet Diagnostic Scan across all active branches,
+    re-test failing branches to filter transient packet loss, enforce the mass-outage circuit
+    breaker, deduplicate against open tickets, and initiate the autonomous ticket flow for
+    each confirmed-down site.
+    """
+    ensure_operational_seed_data(db)
+    ensure_directory_seeded(db)
+    settings_row = ensure_system_settings(db)
+
+    if (
+        simulate_scenario is not None
+        and simulate_scenario != "LIVE_ICMP"
+        and get_settings().diagnostic_mode != "simulated"
+    ):
+        raise SupportAgentError(
+            "simulate_scenario override is only permitted in simulated mode",
+            status_code=403,
+        )
+
+    started_at = datetime.now(timezone.utc)
+
+    # 1. Check Global Kill-Switch and scheduled enablement flag
+    if settings_row.global_ai_kill_switch or (
+        not dry_run and triggered_by == "SCHEDULER" and not settings_row.fleet_scan_enabled
+    ):
+        skip_reason = (
+            "global_ai_kill_switch" if settings_row.global_ai_kill_switch else "fleet_scan_disabled"
+        )
+        skip_run = FleetScanRun(
+            suite_id=None,
+            triggered_by=triggered_by,
+            status="SKIPPED_KILL_SWITCH",
+            total_branches=0,
+            failing_initial=0,
+            recovered_on_retest=0,
+            confirmed_down=0,
+            duplicates_skipped=0,
+            created_ticket_numbers=[],
+            summary=(
+                "Proactive Fleet Scan skipped because Global AI Kill-Switch is active."
+                if settings_row.global_ai_kill_switch
+                else "Proactive Fleet Scan skipped because scheduled fleet scan is disabled in Settings."
+            ),
+            details_json={"reason": skip_reason, "dry_run": dry_run},
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(skip_run)
+        db.commit()
+        db.refresh(skip_run)
+        return serialize_fleet_scan_run(skip_run)
+
+    resolved_scenario = cast(
+        Literal[
+            "LIVE_ICMP",
+            "AUTO",
+            "PASS",
+            "FULL_OUTAGE",
+            "LOCAL_LOOP_DOWN_ON_4G",
+            "INTERNAL_LAN_SWITCH",
+        ],
+        simulate_scenario
+        if simulate_scenario is not None
+        else ("LIVE_ICMP" if get_settings().diagnostic_mode == "live" else "AUTO"),
+    )
+
+    # 2. Execute Initial Full Fleet Diagnostic Suite
+    suite_report = await run_full_branch_diagnostic_suite(
+        db,
+        DiagnosticSuiteRunRequest(
+            isp_name="ALL",
+            region="All",
+            simulate_scenario=resolved_scenario,
+            ping_count=1 if resolved_scenario == "LIVE_ICMP" else (settings_row.ping_count or 4),
+            traceroute_max_hops=settings_row.traceroute_max_hops or 15,
+            limit=limit,
+        ),
+        actor_username=triggered_by,
+    )
+
+    total_branches = suite_report.total_branches
+    initial_failing = [item for item in suite_report.items if item.diagnosis_code != "PASS"]
+    failing_initial = len(initial_failing)
+
+    # 3. Two-Strike Confirmation Re-Test on initially failing branches
+    is_live_icmp = resolved_scenario == "LIVE_ICMP"
+    retest_ping_count = max(2, int(settings_row.ping_count or 4))
+    retest_timeout_sec = int(settings_row.diagnostic_timeout_sec or 20)
+    retest_max_hops = int(settings_row.traceroute_max_hops or 15)
+    sem = asyncio.Semaphore(16)
+
+    async def _retest_one(item: Any) -> tuple[Any, dict[str, Any]]:
+        fb_ip1, fb_ip2 = derive_branch_ips(item.branch_code)
+        async with sem:
+            res = await execute_dual_ping_and_traceroute(
+                branch_code=item.branch_code,
+                branch_name=item.branch_name,
+                ip_1=item.ip_1 or fb_ip1,
+                ip_2=item.ip_2 or fb_ip2,
+                isp_name=item.isp_name,
+                four_g_hub_ip=item.four_g_hub_ip,
+                check_mode="FULL",
+                simulate_scenario=resolved_scenario,
+                ping_count=retest_ping_count,
+                traceroute_max_hops=retest_max_hops,
+                timeout_sec=retest_timeout_sec,
+                use_live_subprocess=is_live_icmp,
+                simulate_delay=False,
+            )
+            return item, res
+
+    retest_pairs = (
+        await asyncio.gather(*(_retest_one(item) for item in initial_failing))
+        if initial_failing
+        else []
+    )
+
+    recovered_on_retest = 0
+    confirmed_down_pairs: list[tuple[Any, dict[str, Any]]] = []
+    for item, r_res in retest_pairs:
+        if str(r_res.get("diagnosis_code") or "PASS") == "PASS":
+            recovered_on_retest += 1
+        else:
+            confirmed_down_pairs.append((item, r_res))
+
+    confirmed_down = len(confirmed_down_pairs)
+
+    # 4. Mass-Outage Circuit Breaker Guard
+    mass_outage_threshold_pct = max(1, int(settings_row.fleet_scan_mass_outage_pct or 5))
+    failing_pct = (confirmed_down / total_branches * 100.0) if total_branches > 0 else 0.0
+
+    fallback_engineer = resolve_fallback_engineer_email(settings_row)
+    admin_email = resolve_admin_notification_email(settings_row)
+
+    if confirmed_down > 0 and failing_pct > float(mass_outage_threshold_pct):
+        by_diag: dict[str, int] = {}
+        sample_codes: list[str] = []
+        for item, r_res in confirmed_down_pairs:
+            dc = str(r_res.get("diagnosis_code") or item.diagnosis_code)
+            by_diag[dc] = by_diag.get(dc, 0) + 1
+            if len(sample_codes) < 15:
+                sample_codes.append(f"{item.branch_code} ({item.isp_name}: {dc})")
+
+        summary_msg = (
+            f"Mass-Outage Guard tripped on suite {suite_report.suite_id}: "
+            f"{confirmed_down}/{total_branches} branches failing ({failing_pct:.1f}% > "
+            f"{mass_outage_threshold_pct}% threshold). Individual ticket creation aborted; "
+            f"Admin and {fallback_engineer} alerted."
+        )
+
+        if not dry_run:
+            await dispatch_outbound_email(
+                db,
+                ticket=None,
+                thread_type="HUMAN_ESCALATION",
+                recipients=[fallback_engineer],
+                cc=[admin_email] if admin_email and admin_email != fallback_engineer else [],
+                subject=(
+                    f"[MASS OUTAGE GUARD] Proactive Fleet Scan {suite_report.suite_id} · "
+                    f"{confirmed_down}/{total_branches} branches failing ({failing_pct:.1f}%)"
+                ),
+                body_text=(
+                    f"Proactive Fleet Diagnostic Scan ({suite_report.suite_id}) detected a suspected mass outage.\n\n"
+                    f"Total Branches Scanned: {total_branches}\n"
+                    f"Initially Failing: {failing_initial}\n"
+                    f"Recovered on Re-Test: {recovered_on_retest}\n"
+                    f"Confirmed Down: {confirmed_down} ({failing_pct:.1f}% of fleet; safety threshold = {mass_outage_threshold_pct}%)\n"
+                    f"Breakdown by Diagnosis: {by_diag}\n"
+                    f"Sample Affected Branches: {', '.join(sample_codes)}\n\n"
+                    "To prevent flooding ISP NOCs during a potential HQ core/VPN/MPLS hub incident, "
+                    "automatic per-branch ticket creation was halted for this scan cycle."
+                ),
+                classification_label=EscalationReason.MASS_OUTAGE_SUSPECTED.value,
+                ai_analysis_json={
+                    "intent": EscalationReason.MASS_OUTAGE_SUSPECTED.value,
+                    "suite_id": suite_report.suite_id,
+                    "confirmed_down": confirmed_down,
+                    "total_branches": total_branches,
+                    "failing_pct": round(failing_pct, 2),
+                },
+            )
+
+        guard_run = FleetScanRun(
+            suite_id=suite_report.suite_id,
+            triggered_by=triggered_by,
+            status="MASS_OUTAGE_GUARD",
+            total_branches=total_branches,
+            failing_initial=failing_initial,
+            recovered_on_retest=recovered_on_retest,
+            confirmed_down=confirmed_down,
+            duplicates_skipped=0,
+            created_ticket_numbers=[],
+            summary=summary_msg,
+            details_json={
+                "dry_run": dry_run,
+                "failing_pct": round(failing_pct, 2),
+                "threshold_pct": mass_outage_threshold_pct,
+                "by_diagnosis": by_diag,
+                "sample_branches": sample_codes,
+            },
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(guard_run)
+        db.commit()
+        db.refresh(guard_run)
+        return serialize_fleet_scan_run(guard_run)
+
+    # 5. Deduplicate against open tickets & 6. Start autonomous ticket flow per failure type
+    duplicates_skipped = 0
+    created_ticket_numbers: list[str] = []
+    branch_outcomes: list[dict[str, Any]] = []
+
+    for item, r_res in confirmed_down_pairs:
+        branch = get_branch_by_code(db, item.branch_code)
+        if branch is None:
+            continue
+
+        diag_code = str(r_res.get("diagnosis_code") or item.diagnosis_code)
+        open_t = _find_open_ticket_for_branch(db, branch.id)
+        if open_t is not None:
+            duplicates_skipped += 1
+            branch_outcomes.append(
+                {
+                    "branch_code": branch.branch_code,
+                    "branch_name": branch.name,
+                    "isp_name": branch.isp_name,
+                    "diagnosis_code": diag_code,
+                    "action": "SKIPPED_OPEN_TICKET",
+                    "ticket_number": open_t.ticket_number,
+                }
+            )
+            continue
+
+        if dry_run:
+            branch_outcomes.append(
+                {
+                    "branch_code": branch.branch_code,
+                    "branch_name": branch.name,
+                    "isp_name": branch.isp_name,
+                    "diagnosis_code": diag_code,
+                    "action": f"DRY_RUN_WOULD_OPEN_{diag_code}",
+                    "ticket_number": "NET-PREVIEW",
+                }
+            )
+            continue
+
+        reg_it = resolve_branch_regional_it_cc(branch, db=db)[0]
+        init_status = (
+            TicketStatus.AWAITING_REGIONAL_IT.value
+            if diag_code == ConnectionFailureType.FULL_OUTAGE.value
+            else TicketStatus.DIAGNOSING.value
+        )
+        prio = (
+            TicketPriority.MEDIUM.value
+            if diag_code == ConnectionFailureType.INTERNAL_LAN_SWITCH.value
+            else TicketPriority.HIGH.value
+        )
+        t_num = _next_ticket_number(db)
+        new_t = Ticket(
+            ticket_number=t_num,
+            title=f"{branch.name} · {FAILURE_DISPLAY_NAMES.get(diag_code, diag_code)}",
+            description=(
+                f"Detected by Proactive 3-Hour Fleet Diagnostic Scan ({suite_report.suite_id}): "
+                f"{r_res.get('summary') or item.meaning}"
+            ),
+            trigger_source=TicketTriggerSource.PROACTIVE_SCAN.value,
+            status=init_status,
+            priority=prio,
+            branch_id=branch.id,
+            isp_id=branch.isp_id,
+            sender_email=reg_it,
+            connection_failure_type=diag_code,
+            ai_automation_enabled=not settings_row.global_ai_kill_switch,
+        )
+        db.add(new_t)
+        db.flush()
+        created_ticket_numbers.append(new_t.ticket_number)
+
+        db.add(
+            TicketEvent(
+                ticket_id=new_t.id,
+                actor_type="AI_AGENT",
+                actor_name="AI_AGENT",
+                event_type="ticket_created",
+                summary=(
+                    f"Ticket {new_t.ticket_number} opened by Proactive Fleet Scan "
+                    f"({suite_report.suite_id} · {diag_code})"
+                ),
+                details_json={
+                    "detail": f"Triggered by {triggered_by} · {r_res.get('summary') or diag_code}",
+                    "suite_id": suite_report.suite_id,
+                    "diagnosis_code": diag_code,
+                },
+            )
+        )
+
+        diag_run = DiagnosticRun(
+            ticket_id=new_t.id,
+            branch_code=branch.branch_code,
+            trigger_source=TicketTriggerSource.PROACTIVE_SCAN.value,
+            ip_1_up=r_res.get("ip_1_up"),
+            ip_2_up=r_res.get("ip_2_up"),
+            four_g_hub_detected=bool(r_res.get("four_g_hub_detected")),
+            detected_hub_ip=r_res.get("detected_hub_ip"),
+            result_status=str(r_res.get("result_status") or "FAIL"),
+            diagnosis_code=diag_code,
+            summary=str(r_res.get("summary") or diag_code),
+            metrics_json=dict(r_res.get("metrics_json") or {}),
+            raw_output=str(r_res.get("raw_output") or ""),
+            duration_ms=int(r_res.get("duration_ms") or 50),
+        )
+        db.add(diag_run)
+        db.flush()
+
+        scan_context = [
+            f"Trigger: Proactive Fleet Scan ({suite_report.suite_id}, triggered_by={triggered_by})",
+            f"Store: {branch.name} (SAP {branch.branch_code}, ISP {branch.isp_name})",
+            f"Two-Strike Confirmed Diagnosis: {diag_code} ({r_res.get('summary')})",
+            (
+                f"IP1 ({branch.ip_1}): {'UP' if r_res.get('ip_1_up') else 'DOWN'} | "
+                f"IP2 ({branch.ip_2}): {'SKIPPED' if r_res.get('ip_2_up') is None else ('UP' if r_res.get('ip_2_up') else 'DOWN')} | "
+                f"4G Hub: {bool(r_res.get('four_g_hub_detected'))}"
+            ),
+        ]
+
+        if diag_code == ConnectionFailureType.FULL_OUTAGE.value:
+            act_status, _, _ = await apply_or_queue_ticket_action(
+                db,
+                settings_row=settings_row,
+                ticket=new_t,
+                branch=branch,
+                action_label="PROACTIVE_SCAN_REGIONAL_IT_NOTIFIED",
+                summary=(
+                    f"Proactive scan detected FULL_OUTAGE on store {branch.name}; "
+                    f"request router photo & site phone from Regional IT ({reg_it})"
+                ),
+                target_status=TicketStatus.AWAITING_REGIONAL_IT,
+                transition_reason=f"Proactive Fleet Scan ({suite_report.suite_id}) confirmed FULL_OUTAGE",
+                connection_failure_type=diag_code,
+                proposed_emails=[
+                    {
+                        "thread_type": "BRANCH",
+                        "recipients": [reg_it],
+                        "cc": resolve_branch_regional_it_cc(branch, db=db),
+                        "subject": f"[{new_t.ticket_number}] Store {branch.name} Unreachable in Proactive Network Scan",
+                        "body_text": (
+                            f"Dear Regional IT ({branch.region}),\n"
+                            f"Automated 3-Hour Proactive Network Scan ({suite_report.suite_id}) detected that Router WAN IP1 ({branch.ip_1}) "
+                            f"for store {branch.name} (SAP {branch.branch_code}) is unreachable (100% packet loss after confirmation re-test).\n"
+                            "Kindly verify store electricity/UPS and reply with a clear router photo and active site contact phone so we can escalate to the ISP."
+                        ),
+                        "classification_label": "REGIONAL_IT_NOTIFY",
+                    }
+                ],
+                proposed_events=[
+                    {
+                        "event_type": "regional_it_notified",
+                        "summary": f"Proactive scan notified Regional IT ({reg_it}) for router photo & site phone",
+                        "details_json": {"detail": f"Suite {suite_report.suite_id} · {diag_code}"},
+                    }
+                ],
+                context_lines=scan_context,
+            )
+        elif diag_code == ConnectionFailureType.LOCAL_LOOP_DOWN_ON_4G.value:
+            subj, body, to_list, cc_list, tpl = format_isp_escalation_email(
+                branch,
+                site_contact_phone=new_t.site_contact_phone,
+                db=db,
+            )
+            act_status, _, _ = await apply_or_queue_ticket_action(
+                db,
+                settings_row=settings_row,
+                ticket=new_t,
+                branch=branch,
+                action_label=f"PROACTIVE_SCAN_ESCALATED_TO_{branch.isp_name}",
+                summary=(
+                    f"Proactive scan detected {diag_code} on store {branch.name}; "
+                    f"escalate to {branch.isp_name} ({to_list[0]}) and request active site phone from Regional IT ({reg_it})"
+                ),
+                target_status=TicketStatus.ESCALATED_TO_ISP,
+                transition_reason=f"Proactive Fleet Scan ({suite_report.suite_id}) confirmed {diag_code}",
+                connection_failure_type=diag_code,
+                followup_minutes=settings_row.welcome_sla_minutes,
+                update_last_isp_contact=True,
+                proposed_emails=[
+                    {
+                        "thread_type": "ISP",
+                        "recipients": to_list,
+                        "cc": cc_list,
+                        "subject": subj,
+                        "body_text": body,
+                        "classification_label": "ESCALATION",
+                        "ai_analysis_json": {"template": tpl, "thread": "ISP"},
+                    },
+                    {
+                        "thread_type": "BRANCH",
+                        "recipients": [reg_it],
+                        "cc": resolve_branch_regional_it_cc(branch, db=db),
+                        "subject": f"ACTION [{new_t.ticket_number}]: Store {branch.name} on 4G Backup — Active site phone needed",
+                        "body_text": (
+                            f"Dear Regional IT ({branch.region}),\n"
+                            f"Automated 3-Hour Proactive Network Scan ({suite_report.suite_id}) detected that store {branch.name} "
+                            f"(SAP {branch.branch_code}) has failed over to its {branch.isp_name} 3G/4G backup hub "
+                            f"({r_res.get('detected_hub_ip') or branch.four_g_hub_ip or '4G Hub'}).\n"
+                            f"Ticket {new_t.ticket_number} has been immediately escalated to {branch.isp_name} ({to_list[0]}) "
+                            f"and is tracking the {settings_row.welcome_sla_minutes}-minute Welcome SLA.\n"
+                            "Kindly reply with an active site contact phone number on site so we can forward it to the ISP NOC."
+                        ),
+                        "classification_label": "SITE_PHONE_REQUEST",
+                    },
+                ],
+                proposed_events=[
+                    {
+                        "event_type": "isp_escalated",
+                        "summary": f"Proactive scan escalated {diag_code} to {branch.isp_name} ({tpl})",
+                        "details_json": {"detail": f"To {to_list[0]} · Subject: {subj}"},
+                    },
+                    {
+                        "event_type": "awaiting_site_phone",
+                        "summary": "Escalated via Proactive Scan without site phone; requested active phone from Regional IT",
+                        "details_json": {"awaiting_site_phone": True},
+                    },
+                ],
+                context_lines=scan_context,
+            )
+        else:
+            # INTERNAL_LAN_SWITCH
+            act_status, _, _ = await apply_or_queue_ticket_action(
+                db,
+                settings_row=settings_row,
+                ticket=new_t,
+                branch=branch,
+                action_label="PROACTIVE_SCAN_INTERNAL_SWITCH_ALERT",
+                summary=f"Proactive scan detected INTERNAL_LAN_SWITCH on store {branch.name}; notify Regional IT ({reg_it})",
+                target_status=TicketStatus.INTERNAL_LAN_ISSUE,
+                transition_reason=f"Proactive Fleet Scan ({suite_report.suite_id}) confirmed IP1 UP, IP2 DOWN",
+                connection_failure_type=diag_code,
+                proposed_emails=[
+                    {
+                        "thread_type": "BRANCH",
+                        "recipients": [reg_it],
+                        "cc": resolve_branch_regional_it_cc(branch, db=db),
+                        "subject": f"[{new_t.ticket_number}] Store {branch.name} Internal LAN Switch Down (IP2 Unreachable)",
+                        "body_text": (
+                            f"Dear Regional IT ({branch.region}),\n"
+                            f"Automated 3-Hour Proactive Network Scan ({suite_report.suite_id}) for store {branch.name} "
+                            f"(SAP {branch.branch_code}) confirmed that Router WAN IP1 ({branch.ip_1}) is UP on primary MPLS, "
+                            f"but Server Switch IP2 ({branch.ip_2}) is DOWN.\n"
+                            "This indicates an internal store LAN switch or RJ45 patch cord issue rather than an ISP WAN outage. "
+                            "Kindly check the internal server switch power and uplink cable."
+                        ),
+                        "classification_label": "INTERNAL_SWITCH_ALERT",
+                    }
+                ],
+                proposed_events=[
+                    {
+                        "event_type": "internal_lan_routed",
+                        "summary": f"Proactive scan routed internal switch issue (IP1 UP, IP2 DOWN) to Regional IT ({reg_it})",
+                        "details_json": {"detail": f"Suite {suite_report.suite_id} · {diag_code}"},
+                    }
+                ],
+                context_lines=scan_context,
+            )
+
+        branch_outcomes.append(
+            {
+                "branch_code": branch.branch_code,
+                "branch_name": branch.name,
+                "isp_name": branch.isp_name,
+                "diagnosis_code": diag_code,
+                "action": act_status,
+                "ticket_number": new_t.ticket_number,
+                "ticket_status": new_t.status,
+            }
+        )
+
+    run_status = "DRY_RUN" if dry_run else "COMPLETED"
+    summary_text = (
+        f"{'Dry run: ' if dry_run else ''}Scanned {total_branches} branches ({suite_report.suite_id}) · "
+        f"{confirmed_down} confirmed down ({recovered_on_retest} recovered on re-test) · "
+        f"{len(created_ticket_numbers)} ticket(s) opened · {duplicates_skipped} open duplicate(s) skipped."
+    )
+
+    scan_run = FleetScanRun(
+        suite_id=suite_report.suite_id,
+        triggered_by=triggered_by,
+        status=run_status,
+        total_branches=total_branches,
+        failing_initial=failing_initial,
+        recovered_on_retest=recovered_on_retest,
+        confirmed_down=confirmed_down,
+        duplicates_skipped=duplicates_skipped,
+        created_ticket_numbers=created_ticket_numbers,
+        summary=summary_text,
+        details_json={
+            "dry_run": dry_run,
+            "scenario_mode": resolved_scenario,
+            "health_pct": suite_report.health_pct,
+            "outcomes": branch_outcomes,
+        },
+        started_at=started_at,
+        finished_at=datetime.now(timezone.utc),
+    )
+    db.add(scan_run)
+    db.commit()
+    db.refresh(scan_run)
+    return serialize_fleet_scan_run(scan_run)

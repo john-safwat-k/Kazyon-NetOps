@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AppShell, Badge, Button } from "../design-system";
 import {
+  FleetScanRunDTO,
+  FleetScanStatusDTO,
   SendTestEmailResult,
   SmtpConnectionTestResult,
   SmtpListenerStatusDTO,
@@ -38,6 +40,11 @@ const DEFAULT_SETTINGS: SystemSettingsDTO = {
   admin_notification_email: "admin@kazyon.com",
   notify_admin_on_every_action: true,
   require_admin_approval_before_action: false,
+  fleet_scan_enabled: false,
+  fleet_scan_interval_minutes: 180,
+  fleet_scan_window_start: "08:00",
+  fleet_scan_window_end: "23:00",
+  fleet_scan_mass_outage_pct: 5,
   fallback_contacts: [
     { ini: "NO", email: "noc-oncall@kazyon.com", role: "On-duty engineer" },
     {
@@ -129,6 +136,12 @@ export function SettingsView({
   const [listener, setListener] = useState<SmtpListenerStatusDTO | null>(
     null,
   );
+  const [fleetScanStatus, setFleetScanStatus] =
+    useState<FleetScanStatusDTO | null>(null);
+  const [fleetScanRunState, setFleetScanRunState] = useState<
+    TestState<FleetScanRunDTO>
+  >({ kind: "idle" });
+
   const loadListenerStatus = useCallback(() => {
     emailsApi
       .loopStatus()
@@ -136,10 +149,18 @@ export function SettingsView({
       .catch(() => setListener(null));
   }, []);
 
+  const loadFleetScanStatus = useCallback(() => {
+    settingsApi
+      .getFleetScans(10)
+      .then((res) => setFleetScanStatus(res))
+      .catch(() => setFleetScanStatus(null));
+  }, []);
+
   useEffect(() => {
     loadSettings();
     loadListenerStatus();
-  }, [loadSettings, loadListenerStatus]);
+    loadFleetScanStatus();
+  }, [loadSettings, loadListenerStatus, loadFleetScanStatus]);
 
   const handleSaveAll = async () => {
     try {
@@ -217,6 +238,46 @@ export function SettingsView({
     }
   };
 
+  const handleToggleFleetScan = async (enabled: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      fleet_scan_enabled: enabled,
+    }));
+    try {
+      const updated = await settingsApi.update({
+        fleet_scan_enabled: enabled,
+        fleet_scan_interval_minutes: settings.fleet_scan_interval_minutes,
+        fleet_scan_window_start: settings.fleet_scan_window_start,
+        fleet_scan_window_end: settings.fleet_scan_window_end,
+        fleet_scan_mass_outage_pct: settings.fleet_scan_mass_outage_pct,
+      });
+      setSettings(updated);
+      loadFleetScanStatus();
+      setToast(
+        enabled
+          ? `Proactive Fleet Scan enabled: Agent will run the full test suite every ${updated.fleet_scan_interval_minutes} min (${updated.fleet_scan_window_start}–${updated.fleet_scan_window_end} Cairo time) and start the flow for failing sites.`
+          : "Proactive Fleet Scan stopped. Scheduled 3-hour branch scans are disabled.",
+      );
+    } catch {
+      setToast("Failed to update Proactive Fleet Scan setting.");
+    }
+  };
+
+  const handleRunFleetScanNow = async (dryRun: boolean) => {
+    setFleetScanRunState({ kind: "running" });
+    try {
+      const result = await settingsApi.runFleetScanNow({ dry_run: dryRun });
+      setFleetScanRunState({ kind: "done", result });
+      loadFleetScanStatus();
+      setToast(result.summary);
+    } catch (err) {
+      setFleetScanRunState({
+        kind: "request_failed",
+        message: err instanceof Error ? err.message : "Fleet scan failed",
+      });
+    }
+  };
+
   // Both tests use the values currently in the form, so they can be checked before saving.
   const handleTestSmtp = async () => {
     setSmtpTest({ kind: "running" });
@@ -244,6 +305,12 @@ export function SettingsView({
       const result = await settingsApi.sendTestEmail({
         recipient: settings.test_redirect_email || settings.mailbox_account,
         branch_code: "1084",
+        smtp_host: settings.smtp_host,
+        smtp_port: settings.smtp_port,
+        smtp_security: settings.smtp_security,
+        smtp_username: settings.smtp_username || undefined,
+        smtp_password: smtpPasswordInput.trim() || undefined,
+        mailbox_account: settings.mailbox_account || undefined,
       });
       setRoundTripTest({ kind: "done", result });
     } catch (err) {
@@ -571,6 +638,286 @@ export function SettingsView({
               Approval modes)
             </span>
           </label>
+        </div>
+      </section>
+
+      <section
+        className="kz-card"
+        style={{
+          border: `1.5px solid ${
+            settings.fleet_scan_enabled && !killed
+              ? "var(--good)"
+              : "var(--border)"
+          }`,
+        }}
+      >
+        <div className="kz-card-hd">
+          <div>
+            <h3>Proactive 3-Hour Full Fleet Diagnostic Scan</h3>
+            <p>
+              Automatically run the full Dual-Ping + 4G Hub Traceroute test
+              suite across all active branches every 3 hours (180 min) and start
+              the autonomous ticket flow for sites that fail the test.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Badge
+              tone={
+                settings.fleet_scan_enabled && !killed ? "good" : "neutral"
+              }
+            >
+              {settings.fleet_scan_enabled && !killed
+                ? `Active · Every ${settings.fleet_scan_interval_minutes}m (${settings.fleet_scan_window_start}–${settings.fleet_scan_window_end})`
+                : "Stopped"}
+            </Badge>
+            <button
+              type="button"
+              className={
+                settings.fleet_scan_enabled
+                  ? "kz-btn kz-btn-danger kz-btn-sm"
+                  : "kz-btn kz-btn-primary kz-btn-sm"
+              }
+              aria-pressed={settings.fleet_scan_enabled}
+              onClick={() => handleToggleFleetScan(!settings.fleet_scan_enabled)}
+            >
+              {settings.fleet_scan_enabled
+                ? "Stop Proactive Fleet Scan"
+                : "Enable 3h Proactive Scan"}
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="kz-card-bd"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 14,
+            fontSize: 13,
+          }}
+        >
+          <label
+            style={{
+              gridColumn: "1 / -1",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              {...({ switch: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
+              checked={settings.fleet_scan_enabled}
+              onChange={(e) => handleToggleFleetScan(e.target.checked)}
+              style={{
+                accentColor: "var(--brand-600)",
+                width: 16,
+                height: 16,
+                margin: 0,
+                cursor: "pointer",
+              }}
+            />
+            <span>
+              Run scheduled Full Fleet Test Suite and auto-open incident tickets
+              for confirmed failing branches
+            </span>
+          </label>
+
+          <label style={labelStyle}>
+            <span>Scan interval (minutes · 180 = 3 hours)</span>
+            <input
+              type="number"
+              min={15}
+              max={1440}
+              value={settings.fleet_scan_interval_minutes}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  fleet_scan_interval_minutes: Math.max(
+                    15,
+                    Number(e.target.value) || 180,
+                  ),
+                }))
+              }
+              style={fieldStyle}
+            />
+          </label>
+
+          <label style={labelStyle}>
+            <span>Store window start (Africa/Cairo)</span>
+            <input
+              type="text"
+              className="kz-mono"
+              placeholder="08:00"
+              value={settings.fleet_scan_window_start}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  fleet_scan_window_start: e.target.value,
+                }))
+              }
+              style={fieldStyle}
+            />
+          </label>
+
+          <label style={labelStyle}>
+            <span>Store window end (Africa/Cairo)</span>
+            <input
+              type="text"
+              className="kz-mono"
+              placeholder="23:00"
+              value={settings.fleet_scan_window_end}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  fleet_scan_window_end: e.target.value,
+                }))
+              }
+              style={fieldStyle}
+            />
+          </label>
+
+          <label style={labelStyle}>
+            <span>Mass-outage safety threshold (% of fleet)</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={settings.fleet_scan_mass_outage_pct}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  fleet_scan_mass_outage_pct: Math.max(
+                    1,
+                    Math.min(100, Number(e.target.value) || 5),
+                  ),
+                }))
+              }
+              style={fieldStyle}
+            />
+          </label>
+
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              paddingTop: 4,
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button
+                type="button"
+                className="kz-btn kz-btn-secondary kz-btn-sm"
+                disabled={fleetScanRunState.kind === "running"}
+                onClick={() => handleRunFleetScanNow(false)}
+              >
+                {fleetScanRunState.kind === "running"
+                  ? "Running fleet scan…"
+                  : "Run full scan & start flows now"}
+              </button>
+              <button
+                type="button"
+                className="kz-btn kz-btn-secondary kz-btn-sm"
+                disabled={fleetScanRunState.kind === "running"}
+                onClick={() => handleRunFleetScanNow(true)}
+              >
+                Dry run (preview without opening tickets)
+              </button>
+              <button
+                type="button"
+                className="kz-btn kz-btn-ghost kz-btn-sm"
+                onClick={loadFleetScanStatus}
+              >
+                Refresh history
+              </button>
+            </div>
+            <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+              Two-strike re-test confirmation · Skips branches with open tickets ·
+              Aborts above {settings.fleet_scan_mass_outage_pct}% fleet outage
+            </span>
+          </div>
+
+          {fleetScanRunState.kind === "request_failed" && (
+            <p style={resultTextStyle} role="alert">
+              Fleet scan failed: {fleetScanRunState.message}
+            </p>
+          )}
+          {fleetScanRunState.kind === "done" && (
+            <p style={resultTextStyle} className="kz-mono">
+              {fleetScanRunState.result.summary}
+            </p>
+          )}
+
+          {fleetScanStatus && fleetScanStatus.recent_runs.length > 0 && (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                overflowX: "auto",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+              }}
+            >
+              <table className="kz-table" style={{ fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Suite / Time</th>
+                    <th>Trigger</th>
+                    <th>Status</th>
+                    <th>Scanned</th>
+                    <th>Confirmed Down</th>
+                    <th>Recovered (Re-test)</th>
+                    <th>Dupes Skipped</th>
+                    <th>Tickets Opened</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fleetScanStatus.recent_runs.slice(0, 5).map((r) => (
+                    <tr key={r.id}>
+                      <td className="kz-mono">
+                        {r.suite_id || `#${r.id}`} ·{" "}
+                        {new Date(r.started_at).toLocaleTimeString(undefined, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                      <td className="kz-mono">{r.triggered_by}</td>
+                      <td>
+                        <Badge
+                          tone={
+                            r.status === "COMPLETED"
+                              ? "good"
+                              : r.status === "MASS_OUTAGE_GUARD"
+                                ? "critical"
+                                : "info"
+                          }
+                        >
+                          {r.status}
+                        </Badge>
+                      </td>
+                      <td className="kz-num">{r.total_branches}</td>
+                      <td className="kz-num">{r.confirmed_down}</td>
+                      <td className="kz-num">{r.recovered_on_retest}</td>
+                      <td className="kz-num">{r.duplicates_skipped}</td>
+                      <td className="kz-mono">
+                        {r.created_ticket_numbers.length > 0
+                          ? r.created_ticket_numbers.slice(0, 6).join(", ") +
+                            (r.created_ticket_numbers.length > 6
+                              ? ` +${r.created_ticket_numbers.length - 6}`
+                              : "")
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
 

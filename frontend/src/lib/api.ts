@@ -228,6 +228,11 @@ export interface TicketDetail360DTO {
   }>;
   branch_emails: TicketEmailItemDTO[];
   isp_emails: TicketEmailItemDTO[];
+  fallback_contacts?: Array<{
+    ini: string;
+    email: string;
+    role: string;
+  }>;
 }
 
 export interface DashboardSummaryDTO {
@@ -685,11 +690,47 @@ export interface SystemSettingsDTO {
   admin_notification_email: string;
   notify_admin_on_every_action: boolean;
   require_admin_approval_before_action: boolean;
+  fleet_scan_enabled: boolean;
+  fleet_scan_interval_minutes: number;
+  fleet_scan_window_start: string;
+  fleet_scan_window_end: string;
+  fleet_scan_mass_outage_pct: number;
   fallback_contacts: Array<{
     ini: string;
     email: string;
     role: string;
   }>;
+}
+
+export interface FleetScanRunDTO {
+  id: number;
+  suite_id: string | null;
+  triggered_by: string;
+  status: string;
+  total_branches: number;
+  failing_initial: number;
+  recovered_on_retest: number;
+  confirmed_down: number;
+  duplicates_skipped: number;
+  created_ticket_numbers: string[];
+  summary: string;
+  details_json: Record<string, unknown>;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface FleetScanStatusDTO {
+  enabled: boolean;
+  global_ai_kill_switch: boolean;
+  running: boolean;
+  interval_minutes: number;
+  window_start: string;
+  window_end: string;
+  mass_outage_pct: number;
+  within_store_window: boolean;
+  last_run: FleetScanRunDTO | null;
+  next_due_at: string | null;
+  recent_runs: FleetScanRunDTO[];
 }
 
 export class ApiError extends Error {
@@ -1449,6 +1490,12 @@ export const settingsApi = {
     subject?: string;
     body_text?: string;
     branch_code?: string;
+    smtp_host?: string;
+    smtp_port?: number;
+    smtp_security?: SmtpSecurity;
+    smtp_username?: string;
+    smtp_password?: string;
+    mailbox_account?: string;
   }): Promise<SendTestEmailResult> {
     return apiRequest<SendTestEmailResult>("/api/v1/settings/send-test-email", {
       method: "POST",
@@ -1459,6 +1506,21 @@ export const settingsApi = {
     return apiRequest<VllmConnectionTestResult>("/api/v1/settings/test-vllm", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+  getFleetScans(limit = 15): Promise<FleetScanStatusDTO> {
+    return apiRequest<FleetScanStatusDTO>(
+      `/api/v1/settings/fleet-scans?limit=${limit}`,
+    );
+  },
+  runFleetScanNow(payload?: {
+    dry_run?: boolean;
+    limit?: number;
+    simulate_scenario?: string;
+  }): Promise<FleetScanRunDTO> {
+    return apiRequest<FleetScanRunDTO>("/api/v1/settings/fleet-scans/run-now", {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
     });
   },
 };

@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.agent.workflow import ingest_and_triage_eml, record_failed_ingest
+from app.agent.workflow import (
+    ingest_and_triage_eml,
+    record_failed_ingest,
+    run_proactive_fleet_scan,
+    serialize_fleet_scan_run,
+)
 from app.common.contracts import EscalationReason, TicketStatus
 from app.common.database import SessionLocal
 from app.directory.models import Branch
@@ -20,11 +26,12 @@ from app.email_engine.smtp_sender import (
     dispatch_admin_action_email,
     dispatch_outbound_email,
     format_isp_escalation_email,
+    resolve_fallback_engineer_email,
     resolve_isp_recipients,
     smtp_transport_config_from_row,
 )
 from app.observability.event_bus import event_bus
-from app.ticketing.models import Ticket, TicketEmail, TicketEvent
+from app.ticketing.models import FleetScanRun, Ticket, TicketEmail, TicketEvent
 from app.ticketing.service import (
     apply_loop_guard_trip,
     apply_or_queue_ticket_action,
@@ -34,7 +41,9 @@ from app.ticketing.service import (
 
 logger = logging.getLogger("it_net.agent.scheduler")
 
+_CAIRO_TZ = ZoneInfo("Africa/Cairo")
 _loop_task: Optional[asyncio.Task[None]] = None
+_active_fleet_scan_task: Optional[asyncio.Task[dict[str, Any]]] = None
 _wake_event: Optional[asyncio.Event] = None
 _loop_telemetry: dict[str, Any] = {
     "background_loop_running": False,
@@ -42,7 +51,152 @@ _loop_telemetry: dict[str, Any] = {
     "poll_count": 1,
     "messages_ingested_total": 0,
     "chasers_sent_total": 0,
+    "last_fleet_scan_at": None,
 }
+
+
+def _parse_hhmm_minutes(hhmm: str, default_minutes: int) -> int:
+    try:
+        parts = (hhmm or "").strip().split(":")
+        if len(parts) != 2:
+            return default_minutes
+        h = int(parts[0])
+        m = int(parts[1])
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return h * 60 + m
+    except Exception:
+        pass
+    return default_minutes
+
+
+def is_within_store_window(
+    now_utc: datetime,
+    window_start: str = "08:00",
+    window_end: str = "23:00",
+) -> bool:
+    """Return True if `now_utc` converted to `Africa/Cairo` falls within `[window_start, window_end]`."""
+    aware = now_utc if now_utc.tzinfo else now_utc.replace(tzinfo=timezone.utc)
+    cairo_dt = aware.astimezone(_CAIRO_TZ)
+    curr_mins = cairo_dt.hour * 60 + cairo_dt.minute
+    start_mins = _parse_hhmm_minutes(window_start, 8 * 60)
+    end_mins = _parse_hhmm_minutes(window_end, 23 * 60)
+    if start_mins <= end_mins:
+        return start_mins <= curr_mins <= end_mins
+    # Overnight window crossing midnight (e.g. 22:00 -> 06:00)
+    return curr_mins >= start_mins or curr_mins <= end_mins
+
+
+def cancel_active_fleet_scan() -> bool:
+    """Cancel an in-flight scheduled fleet scan task immediately when disabled in Settings."""
+    global _active_fleet_scan_task
+    if _active_fleet_scan_task is not None and not _active_fleet_scan_task.done():
+        _active_fleet_scan_task.cancel()
+        return True
+    return False
+
+
+async def run_scheduled_fleet_scan_if_due(
+    db: Session,
+    *,
+    now_utc: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Check if the 3-Hour (`fleet_scan_interval_minutes`) Proactive Fleet Scan is enabled,
+    within Cairo store operating hours, and due to run; if so, execute it and record `FleetScanRun`.
+    """
+    global _active_fleet_scan_task
+    settings_row = ensure_system_settings(db)
+    if settings_row.global_ai_kill_switch:
+        return {"skipped": True, "reason": "global_ai_kill_switch"}
+    if not settings_row.fleet_scan_enabled:
+        return {"skipped": True, "reason": "fleet_scan_disabled"}
+
+    now = now_utc or datetime.now(timezone.utc)
+    w_start = settings_row.fleet_scan_window_start or "08:00"
+    w_end = settings_row.fleet_scan_window_end or "23:00"
+    if not is_within_store_window(now, w_start, w_end):
+        return {"skipped": True, "reason": "outside_store_hours_window"}
+
+    interval_min = max(15, int(settings_row.fleet_scan_interval_minutes or 180))
+    last_run = db.execute(
+        select(FleetScanRun)
+        .where(FleetScanRun.status.in_(["COMPLETED", "MASS_OUTAGE_GUARD"]))
+        .order_by(FleetScanRun.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if last_run is not None and last_run.started_at is not None:
+        last_dt = (
+            last_run.started_at
+            if last_run.started_at.tzinfo
+            else last_run.started_at.replace(tzinfo=timezone.utc)
+        )
+        elapsed_min = (now - last_dt).total_seconds() / 60.0
+        if elapsed_min < float(interval_min):
+            return {
+                "skipped": True,
+                "reason": "interval_not_elapsed",
+                "minutes_until_next": round(float(interval_min) - elapsed_min, 1),
+            }
+
+    task = asyncio.create_task(
+        run_proactive_fleet_scan(db, triggered_by="SCHEDULER", dry_run=False)
+    )
+    _active_fleet_scan_task = task
+    try:
+        scan_res = await task
+    finally:
+        if _active_fleet_scan_task is task:
+            _active_fleet_scan_task = None
+
+    _loop_telemetry["last_fleet_scan_at"] = now
+    await event_bus.broadcast("fleet_scan.completed", scan_res)
+    return {"skipped": False, "scan": scan_res}
+
+
+def get_fleet_scan_status(db: Session, *, limit: int = 15) -> dict[str, Any]:
+    """Return Proactive Fleet Scan configuration, live scheduler state, and recent `FleetScanRun` history."""
+    settings_row = ensure_system_settings(db)
+    now = datetime.now(timezone.utc)
+    w_start = settings_row.fleet_scan_window_start or "08:00"
+    w_end = settings_row.fleet_scan_window_end or "23:00"
+    interval_min = max(15, int(settings_row.fleet_scan_interval_minutes or 180))
+
+    recent_rows = (
+        db.execute(select(FleetScanRun).order_by(FleetScanRun.id.desc()).limit(limit))
+        .scalars()
+        .all()
+    )
+    recent_dtos = [serialize_fleet_scan_run(r) for r in recent_rows]
+
+    last_completed = next(
+        (r for r in recent_rows if r.status in {"COMPLETED", "MASS_OUTAGE_GUARD"}),
+        None,
+    )
+    next_due_at: Optional[str] = None
+    if settings_row.fleet_scan_enabled and not settings_row.global_ai_kill_switch:
+        if last_completed is not None and last_completed.started_at is not None:
+            last_dt = (
+                last_completed.started_at
+                if last_completed.started_at.tzinfo
+                else last_completed.started_at.replace(tzinfo=timezone.utc)
+            )
+            next_due_at = (last_dt + timedelta(minutes=interval_min)).isoformat()
+        else:
+            next_due_at = now.isoformat()
+
+    return {
+        "enabled": bool(settings_row.fleet_scan_enabled),
+        "global_ai_kill_switch": bool(settings_row.global_ai_kill_switch),
+        "running": bool(_active_fleet_scan_task is not None and not _active_fleet_scan_task.done()),
+        "interval_minutes": interval_min,
+        "window_start": w_start,
+        "window_end": w_end,
+        "mass_outage_pct": int(settings_row.fleet_scan_mass_outage_pct or 5),
+        "within_store_window": is_within_store_window(now, w_start, w_end),
+        "last_run": serialize_fleet_scan_run(last_completed) if last_completed else None,
+        "next_due_at": next_due_at,
+        "recent_runs": recent_dtos,
+    }
 
 
 async def run_sla_chaser_cycle(db: Session) -> dict[str, Any]:
@@ -63,11 +217,7 @@ async def run_sla_chaser_cycle(db: Session) -> dict[str, Any]:
         .all()
     )
 
-    fallback_engineer = (
-        settings_row.fallback_contacts[0]["email"]
-        if settings_row.fallback_contacts and settings_row.fallback_contacts[0].get("email")
-        else "noc-oncall@kazyon.com"
-    )
+    fallback_engineer = resolve_fallback_engineer_email(settings_row)
 
     chased = 0
     escalated_to_human = 0
@@ -213,7 +363,7 @@ async def run_email_loop_cycle_once(db: Session) -> dict[str, Any]:
     3. Run the 2h Welcome SLA & 4–6h ISP Follow-Up Chaser cycle
     """
     ensure_system_settings(db)
-    raw_messages = await poll_inbound_mailbox_raw()
+    raw_messages = await poll_inbound_mailbox_raw(db=db)
 
     ingested_results: list[dict[str, Any]] = []
     for fname, raw_bytes in raw_messages:
@@ -239,6 +389,16 @@ async def run_email_loop_cycle_once(db: Session) -> dict[str, Any]:
     if chaser_res.get("chased_count", 0) > 0 or chaser_res.get("escalated_to_human_count", 0) > 0:
         await event_bus.broadcast("sla.chaser_ran", chaser_res)
 
+    try:
+        fleet_scan_res = await run_scheduled_fleet_scan_if_due(db)
+    except asyncio.CancelledError:
+        logger.info("In-flight scheduled fleet scan cancelled via Settings.")
+        fleet_scan_res = {"skipped": True, "reason": "cancelled"}
+    except Exception as exc:
+        logger.warning("Scheduled proactive fleet scan failed: %s", exc)
+        db.rollback()
+        fleet_scan_res = {"skipped": True, "reason": f"error: {exc}"}
+
     now = datetime.now(timezone.utc)
     _loop_telemetry["last_poll_at"] = now
     _loop_telemetry["poll_count"] = int(_loop_telemetry.get("poll_count", 0)) + 1
@@ -252,6 +412,7 @@ async def run_email_loop_cycle_once(db: Session) -> dict[str, Any]:
         "messages_ingested": len(ingested_results),
         "ingested": ingested_results,
         "sla_chaser": chaser_res,
+        "fleet_scan": fleet_scan_res,
         "poll_count": _loop_telemetry["poll_count"],
     }
 
@@ -321,6 +482,7 @@ def get_email_loop_status(db: Session) -> dict[str, Any]:
         "smtp_credentials_configured": smtp_cfg.credentials_configured,
         "test_redirect_email": smtp_cfg.test_redirect_email,
         "smtp_listener": get_listener_status(),
+        "fleet_scan": get_fleet_scan_status(db, limit=5),
     }
 
 
@@ -377,6 +539,7 @@ def start_background_email_loop() -> None:
 async def stop_background_email_loop() -> None:
     """Cancel and await the background IMAP poller & SLA chaser loop on FastAPI shutdown."""
     global _loop_task
+    cancel_active_fleet_scan()
     if _loop_task is not None and not _loop_task.done():
         _loop_task.cancel()
         try:

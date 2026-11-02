@@ -42,6 +42,7 @@ from app.email_engine.smtp_sender import (
     load_smtp_transport_config,
     resolve_admin_notification_email,
     resolve_branch_regional_it_cc,
+    resolve_fallback_engineer_email,
     resolve_isp_recipients,
     smtp_transport_config_from_row,
     test_smtp_connection_sync,
@@ -156,6 +157,11 @@ def ensure_system_settings(db: Session) -> SystemSettings:
         admin_notification_email=settings.admin_email or "admin@kazyon.com",
         notify_admin_on_every_action=True,
         require_admin_approval_before_action=False,
+        fleet_scan_enabled=False,
+        fleet_scan_interval_minutes=180,
+        fleet_scan_window_start="08:00",
+        fleet_scan_window_end="23:00",
+        fleet_scan_mass_outage_pct=5,
         fallback_contacts=[
             {"ini": "NO", "email": "noc-oncall@kazyon.com", "role": "On-duty engineer"},
             {
@@ -184,7 +190,7 @@ def purge_legacy_demo_data(db: Session) -> None:
         db.execute(delete(ReplicationReportRow).where(ReplicationReportRow.report_id == rep.id))
         db.delete(rep)
 
-    db.execute(delete(TicketEmail).where(TicketEmail.message_id.like("<%.kz@kazyon.com>")))
+    db.execute(delete(TicketEmail).where(TicketEmail.message_id.like("<demo-%@kazyon.com>")))
 
     demo_tickets = (
         db.execute(select(Ticket).where(Ticket.ticket_number.in_(DEMO_TICKET_NUMBERS)))
@@ -210,26 +216,21 @@ def ensure_operational_seed_data(db: Session) -> None:
         "itsupport-agent@kazyon.com",
         "network-support@kazyon.com",
         "network-support-dev@kazyon.com",
-        "johnsafwat362@gmail.com",
     }
-    legacy_hosts = {"", "smtp.office365.com", "smtp.gmail.com", "outlook.office365.com"}
+    legacy_hosts = {"", "smtp.office365.com", "outlook.office365.com"}
     changed = False
-    if (row.mailbox_account or "").strip() in legacy_accounts or "@gmail.com" in (
-        row.mailbox_account or ""
-    ).lower():
-        row.mailbox_account = "noc@kazyon.com"
+    if (row.mailbox_account or "").strip() in legacy_accounts:
+        row.mailbox_account = settings.smtp_username or "noc@kazyon.com"
         changed = True
     if (row.smtp_host or "").strip() in legacy_hosts:
         row.smtp_host = "mail.kazyon.com"
         row.smtp_port = 587
         row.smtp_security = "starttls"
         changed = True
-    if (row.smtp_username or "").strip() in legacy_accounts or "@gmail.com" in (
-        row.smtp_username or ""
-    ).lower():
-        row.smtp_username = settings.smtp_username or "noc@kazyon.com"
+    if (row.smtp_username or "").strip() in legacy_accounts:
+        row.smtp_username = settings.smtp_username or row.mailbox_account or "noc@kazyon.com"
         changed = True
-    if settings.smtp_password and (not row.smtp_password_encrypted or changed):
+    if settings.smtp_password and not row.smtp_password_encrypted:
         row.smtp_password_encrypted = encrypt_secret(settings.smtp_password)
         row.smtp_enabled = True
         changed = True
@@ -237,9 +238,6 @@ def ensure_operational_seed_data(db: Session) -> None:
         row.imap_host = ""
         row.imap_username = ""
         row.imap_password_encrypted = ""
-        changed = True
-    if "@gmail.com" in (row.test_redirect_email or "").lower():
-        row.test_redirect_email = ""
         changed = True
     if changed:
         db.commit()
@@ -281,7 +279,11 @@ def _build_kanban_card_dto(db: Session, ticket: Ticket) -> KanbanTicketCardDto:
     failure_label = FAILURE_DISPLAY_NAMES.get(ticket.connection_failure_type or "")
     note: Optional[str] = None
     if col == 0:
-        note = "Replication: Not Updated"
+        note = (
+            "Proactive Scan: Awaiting photo"
+            if ticket.trigger_source == TicketTriggerSource.PROACTIVE_SCAN.value
+            else "Replication: Not Updated"
+        )
     elif col == 1:
         note = "Vision: analysing photo"
     elif col == 2:
@@ -535,6 +537,8 @@ def get_dashboard_summary(db: Session, range_key: str = "7d") -> DashboardSummar
     total_branches = sum(isp_store_counts.values()) or int(
         db.execute(select(func.count()).select_from(Branch)).scalar_one() or 0
     )
+    settings_row = ensure_system_settings(db)
+    mailbox_label = (settings_row.mailbox_account or "noc@kazyon.com").strip()
 
     return DashboardSummaryResponse(
         range_key=range_key,
@@ -555,8 +559,10 @@ def get_dashboard_summary(db: Session, range_key: str = "7d") -> DashboardSummar
                 "state": "ok",
             },
             {
-                "name": "SMTP Mailbox (noc@kazyon.com)",
-                "detail": "Service account active",
+                "name": f"SMTP Mailbox ({mailbox_label})",
+                "detail": "Service account active"
+                if settings_row.smtp_enabled
+                else "Local dropbox mode",
                 "state": "ok",
             },
             {"name": "PostgreSQL 16", "detail": "Connected", "state": "ok"},
@@ -601,6 +607,7 @@ def get_ticket_360_detail(db: Session, ticket_identifier: str) -> TicketDetail36
     """Build the full 360° Ticket Detail response with 4 tabs (Timeline, Tests & Vision, Branch Emails, ISP Emails)."""
     ticket = get_ticket_by_number_or_id(db, ticket_identifier)
     branch = db.get(Branch, ticket.branch_id) if ticket.branch_id else None
+    settings_row = ensure_system_settings(db)
 
     sap_code = branch.branch_code if branch else "—"
     store_name = branch.name if branch else ticket.title.split(" · ")[0]
@@ -608,15 +615,41 @@ def get_ticket_360_detail(db: Session, ticket_identifier: str) -> TicketDetail36
     ip_2 = branch.ip_2 if branch else "—"
     region = branch.region if branch and branch.region else "—"
     reg_it = (
-        branch.regional_it_email
-        if branch and branch.regional_it_email
+        resolve_branch_regional_it_cc(branch, db=db)[0]
+        if branch is not None
         else (ticket.sender_email or "—")
     )
     isp_name = (branch.isp_name if branch else "NOOR").upper()
-    isp_mail = branch.isp_contact_mail if branch else "noc@noor.net"
+    isp_to_list, _isp_cc_list = resolve_isp_recipients(branch, db=db)
+    isp_mail = isp_to_list[0] if isp_to_list else "noc@noor.net"
     ll_id = branch.ll_circuit_id if branch and branch.ll_circuit_id else "—"
     g3_id = branch.backup_circuit_id if branch and branch.backup_circuit_id else "—"
     hub_ip = branch.four_g_hub_ip if branch and branch.four_g_hub_ip else "—"
+
+    configured_contacts: list[dict[str, str]] = []
+    seen_contact_emails: set[str] = set()
+    for c in settings_row.fallback_contacts or []:
+        if isinstance(c, dict):
+            c_email = str(c.get("email") or "").strip()
+            if c_email and c_email.lower() not in seen_contact_emails:
+                seen_contact_emails.add(c_email.lower())
+                configured_contacts.append(
+                    {
+                        "ini": str(c.get("ini") or c_email[:2].upper()),
+                        "email": c_email,
+                        "role": str(c.get("role") or "Escalation engineer"),
+                    }
+                )
+    admin_mail = resolve_admin_notification_email(settings_row)
+    if admin_mail and admin_mail.lower() not in seen_contact_emails:
+        seen_contact_emails.add(admin_mail.lower())
+        configured_contacts.append(
+            {
+                "ini": admin_mail[:2].upper(),
+                "email": admin_mail,
+                "role": "Admin notification contact",
+            }
+        )
 
     sla_tuple = compute_sla_tuple(ticket) or (120, 120)
     stage_label = resolve_human_stage_label(ticket)
@@ -770,6 +803,7 @@ def get_ticket_360_detail(db: Session, ticket_identifier: str) -> TicketDetail36
         diagnostic_runs=runs_dtos,
         branch_emails=branch_emails,
         isp_emails=isp_emails,
+        fallback_contacts=configured_contacts,
     )
 
 
@@ -1339,6 +1373,7 @@ LOOP_GUARD_TRIP_THRESHOLD = 2
 _TICKETLESS_ESCALATION_SUMMARIES: dict[str, str] = {
     EscalationReason.INGEST_FAILED.value: "The agent crashed while processing this email; no automated action was taken.",
     EscalationReason.LLM_UNAVAILABLE.value: "vLLM was unavailable for every retry cycle; the email was never classified.",
+    EscalationReason.MASS_OUTAGE_SUSPECTED.value: "Proactive Fleet Scan detected a suspected mass outage exceeding the safety threshold; automatic ticket creation was halted.",
 }
 
 
@@ -1386,6 +1421,8 @@ def apply_loop_guard_trip(db: Session, ticket: Optional[Ticket]) -> bool:
         )
         return False
     ticket.escalation_reason = EscalationReason.LOOP_GUARD_TRIPPED.value
+    if not ticket.human_escalated_to:
+        ticket.human_escalated_to = resolve_fallback_engineer_email(ensure_system_settings(db))
     return True
 
 
@@ -1503,26 +1540,18 @@ async def send_ticket_manual_reply(
     branch = db.get(Branch, ticket.branch_id) if ticket.branch_id else None
 
     if payload.thread_type == "ISP":
-        if branch is not None:
-            isp_to_list, cc_list = resolve_isp_recipients(branch, db=db)
-            to_addr = isp_to_list[0] if isp_to_list else "noc@noor.net"
-        else:
-            to_addr = "noc@noor.net"
-            cc_list = ["ITInfrastructure@kazyon.com"]
+        isp_to_list, cc_list = resolve_isp_recipients(branch, db=db)
+        to_addr = isp_to_list[0] if isp_to_list else "noc@noor.net"
         subj = (
             payload.subject or f"RE: store {branch.branch_code if branch else ticket.ticket_number}"
         )
     else:
-        to_addr = ticket.sender_email or (
-            branch.regional_it_email
-            if branch and branch.regional_it_email
-            else "CITSupport@kazyon.com"
-        )
+        cc_list = resolve_branch_regional_it_cc(branch, db=db)
+        to_addr = ticket.sender_email or cc_list[0]
         subj = (
             payload.subject
             or f"RE: [{ticket.ticket_number}] {branch.name if branch else 'Branch Issue'}"
         )
-        cc_list = resolve_branch_regional_it_cc(branch, db=db)
 
     await dispatch_outbound_email(
         db,
@@ -1558,8 +1587,10 @@ async def force_ticket_isp_followup(
     """Force an immediate ISP follow-up chaser email outside the scheduled 2h/4–6h loop."""
     ticket = get_ticket_by_number_or_id(db, ticket_identifier)
     branch = db.get(Branch, ticket.branch_id) if ticket.branch_id else None
+    settings_row = ensure_system_settings(db)
     isp_name = branch.isp_name if branch else "NOOR"
-    to_addr = branch.isp_contact_mail if branch else "noc@noor.net"
+    isp_to_list, isp_cc_list = resolve_isp_recipients(branch, db=db)
+    to_addr = isp_to_list[0] if isp_to_list else "noc@noor.net"
     sap = branch.branch_code if branch else ticket.ticket_number
     case_ref = ticket.isp_reference_number or "pending"
 
@@ -1574,14 +1605,17 @@ async def force_ticket_isp_followup(
         ticket=ticket,
         thread_type="ISP",
         recipients=[to_addr],
-        cc=["ITInfrastructure@kazyon.com"],
+        cc=isp_cc_list,
+        branch=branch,
         subject=subj,
         body_text=body,
         classification_label="CHASER",
     )
     ticket.followup_count += 1
     ticket.last_isp_contact_at = datetime.now(timezone.utc)
-    ticket.next_followup_at = datetime.now(timezone.utc) + timedelta(minutes=300)
+    ticket.next_followup_at = datetime.now(timezone.utc) + timedelta(
+        minutes=int(settings_row.followup_interval_minutes or 300)
+    )
     db.add(
         TicketEvent(
             ticket_id=ticket.id,
@@ -1605,6 +1639,10 @@ async def escalate_ticket_to_human_engineer(
 ) -> TicketDetail360Response:
     """Transition a ticket to `NEEDS_HUMAN_REVIEW`, pause AI, and email the full incident report."""
     ticket = get_ticket_by_number_or_id(db, ticket_identifier)
+    settings_row = ensure_system_settings(db)
+    target_email = (payload.target_email or "").strip() or resolve_fallback_engineer_email(
+        settings_row
+    )
     transition_ticket(
         db,
         ticket,
@@ -1615,13 +1653,13 @@ async def escalate_ticket_to_human_engineer(
         force=True,
     )
     ticket.escalation_reason = payload.reason
-    ticket.human_escalated_to = payload.target_email
+    ticket.human_escalated_to = target_email
 
     await dispatch_outbound_email(
         db,
         ticket=ticket,
         thread_type="HUMAN_ESCALATION",
-        recipients=[payload.target_email],
+        recipients=[target_email],
         subject=f"[HUMAN REVIEW] {ticket.ticket_number} · {payload.reason}",
         body_text=f"Escalated by {actor.display_name}.\nReason: {payload.reason}\nNote: {payload.note}",
         classification_label="HUMAN_ESCALATION",
@@ -1633,7 +1671,7 @@ async def escalate_ticket_to_human_engineer(
             actor_name=actor.display_name,
             event_type="human_escalated",
             summary="Escalated to human engineer",
-            details_json={"detail": f"Report emailed to {payload.target_email}"},
+            details_json={"detail": f"Report emailed to {target_email}"},
         )
     )
     db.commit()
@@ -1669,6 +1707,8 @@ def override_ticket_vision_verdict(
 def list_human_escalations(db: Session) -> list[EscalationItemDto]:
     """Return real Human Review & Out-of-Flow Escalation Queue items from the database (Page 7)."""
     items: list[EscalationItemDto] = []
+    settings_row = ensure_system_settings(db)
+    default_engineer_email = resolve_fallback_engineer_email(settings_row)
 
     db_escalated = (
         db.execute(
@@ -1695,6 +1735,7 @@ def list_human_escalations(db: Session) -> list[EscalationItemDto]:
             t.escalation_reason == EscalationReason.ADMIN_APPROVAL_REQUIRED.value
             and pending_action is not None
         )
+        resolved_engineer = t.human_escalated_to or default_engineer_email
         items.append(
             EscalationItemDto(
                 key=f"ticket-{t.id}",
@@ -1720,9 +1761,9 @@ def list_human_escalations(db: Session) -> list[EscalationItemDto]:
                         or f"Awaiting Admin approval before executing {pending_action.get('action_label')}."
                     )
                     if is_approval_req and pending_action
-                    else f"Escalated to {t.human_escalated_to or 'noc-oncall@kazyon.com'}."
+                    else f"Escalated to {resolved_engineer}."
                 ),
-                engineer_email=t.human_escalated_to or "noc-oncall@kazyon.com",
+                engineer_email=resolved_engineer,
                 primary_action="Approve & Execute" if is_approval_req else "Mark handled",
                 pending_admin_action=pending_action,
             )
@@ -1773,7 +1814,7 @@ def list_human_escalations(db: Session) -> list[EscalationItemDto]:
                     label,
                     "Unrecognized inbound email with low classification confidence or no matching branch.",
                 ),
-                engineer_email="noc-oncall@kazyon.com",
+                engineer_email=default_engineer_email,
                 primary_action="Convert to ticket",
             )
         )
@@ -1928,6 +1969,7 @@ CLASSIFICATION_BADGE_TONES: dict[str, str] = {
     "AUTO_SUBMITTED_IGNORED": "neutral",
     "ADMIN_ACTION_NOTIFICATION": "info",
     "ADMIN_APPROVAL_REQUEST": "warning",
+    "MASS_OUTAGE_SUSPECTED": "critical",
 }
 
 
@@ -2017,6 +2059,13 @@ def _settings_dto(row: SystemSettings) -> SystemSettingsDto:
         if row.require_admin_approval_before_action is not None
         else False
     )
+    dto.fleet_scan_enabled = bool(
+        row.fleet_scan_enabled if row.fleet_scan_enabled is not None else False
+    )
+    dto.fleet_scan_interval_minutes = int(row.fleet_scan_interval_minutes or 180)
+    dto.fleet_scan_window_start = row.fleet_scan_window_start or "08:00"
+    dto.fleet_scan_window_end = row.fleet_scan_window_end or "23:00"
+    dto.fleet_scan_mass_outage_pct = int(row.fleet_scan_mass_outage_pct or 5)
     return dto
 
 
@@ -2040,6 +2089,11 @@ def update_system_settings(
         else:
             setattr(row, k, v.strip() if isinstance(v, str) else v)
 
+    if row.global_ai_kill_switch or not row.fleet_scan_enabled:
+        from app.agent.scheduler import cancel_active_fleet_scan
+
+        cancel_active_fleet_scan()
+
     changed_keys = sorted(changes)
     keys_preview = ", ".join(changed_keys[:8])
     if len(changed_keys) > 8:
@@ -2054,7 +2108,8 @@ def update_system_settings(
         summary=(
             f"Updated AI Agent, Mailbox & SLA settings ({keys_preview or 'no changes'}; "
             f"kill_switch={row.global_ai_kill_switch}, smtp_enabled={row.smtp_enabled}, "
-            f"ask_before_acting={row.require_admin_approval_before_action})"
+            f"ask_before_acting={row.require_admin_approval_before_action}, "
+            f"fleet_scan_enabled={row.fleet_scan_enabled})"
         ),
         details={"updated_fields": changed_keys},
         ip_address=ip_address,
@@ -2104,12 +2159,37 @@ async def send_live_test_email(db: Session, payload: SendTestEmailRequest) -> Se
 
     started = _time.perf_counter()
     saved = load_smtp_transport_config(db)
-    cfg = replace(saved, enabled=True, test_redirect_email="")
+    username = (
+        payload.smtp_username.strip()
+        if payload.smtp_username is not None and payload.smtp_username.strip()
+        else saved.username
+    )
+    password = (
+        payload.smtp_password.strip()
+        if payload.smtp_password is not None and payload.smtp_password.strip()
+        else saved.password
+    )
+    from_addr = (
+        payload.mailbox_account.strip()
+        if payload.mailbox_account is not None and payload.mailbox_account.strip()
+        else saved.from_address
+    )
+    cfg = replace(
+        saved,
+        host=(payload.smtp_host if payload.smtp_host is not None else saved.host).strip(),
+        port=payload.smtp_port or saved.port,
+        security=payload.smtp_security or saved.security,
+        username=username,
+        password=password,
+        from_address=from_addr,
+        enabled=True,
+        test_redirect_email="",
+    )
     recipient = (
         (payload.recipient or "").strip()
         or saved.test_redirect_email
-        or saved.from_address
-        or saved.username
+        or cfg.from_address
+        or cfg.username
     )
     sap = (payload.branch_code or "1084").strip()
     subject = (payload.subject or "").strip() or f"Store {sap} network down — Kazyon Live SMTP Test"

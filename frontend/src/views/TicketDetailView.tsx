@@ -41,7 +41,7 @@ export function TicketDetailView({
 
   // Escalate modal state
   const [escOpen, setEscOpen] = useState(false);
-  const [escTarget, setEscTarget] = useState("noc-oncall@kazyon.com");
+  const [escTarget, setEscTarget] = useState("");
   const [escReason, setEscReason] = useState("OTHER");
   const [escNote, setEscNote] = useState(
     "ISP not responding after chasers; branch manager escalating.",
@@ -54,6 +54,9 @@ export function TicketDetailView({
         setTicket(res);
         setIspRefInput(res.isp_reference_number || "");
         setSitePhoneInput(res.site_contact_phone || "");
+        if (res.fallback_contacts && res.fallback_contacts.length > 0) {
+          setEscTarget((prev) => prev || res.fallback_contacts![0].email);
+        }
       })
       .catch(() => {});
   }, [ticketNumber]);
@@ -567,12 +570,22 @@ export function TicketDetailView({
                   value={escTarget}
                   onChange={(e) => setEscTarget(e.target.value)}
                 >
-                  <option value="noc-oncall@kazyon.com">
-                    noc-oncall@kazyon.com
-                  </option>
-                  <option value="ITInfrastructure@kazyon.com">
-                    ITInfrastructure@kazyon.com
-                  </option>
+                  {(ticket.fallback_contacts &&
+                  ticket.fallback_contacts.length > 0
+                    ? ticket.fallback_contacts
+                    : [
+                        {
+                          ini: "NO",
+                          email: "noc-oncall@kazyon.com",
+                          role: "On-duty engineer",
+                        },
+                      ]
+                  ).map((contact) => (
+                    <option key={contact.email} value={contact.email}>
+                      {contact.email}
+                      {contact.role ? ` (${contact.role})` : ""}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="kz-field">

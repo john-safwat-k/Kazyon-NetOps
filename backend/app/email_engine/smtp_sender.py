@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import email.utils
 import logging
 import smtplib
@@ -13,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, cast
 from uuid import uuid4
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
@@ -48,6 +50,18 @@ def resolve_admin_notification_email(
     return (get_settings().admin_email or "admin@kazyon.com").strip()
 
 
+def resolve_fallback_engineer_email(
+    settings_row: Optional[SystemSettings],
+) -> str:
+    """Resolve the primary Human Escalation Engineer email from Page 12 (`system_settings.fallback_contacts`),
+    falling back to `admin_notification_email` or `ADMIN_EMAIL` in `.env`."""
+    if settings_row is not None and settings_row.fallback_contacts:
+        for contact in settings_row.fallback_contacts:
+            if isinstance(contact, dict) and str(contact.get("email") or "").strip():
+                return str(contact["email"]).strip()
+    return resolve_admin_notification_email(settings_row)
+
+
 def resolve_branch_regional_it_cc(
     branch: Optional[Branch],
     db: Optional[Session] = None,
@@ -64,19 +78,19 @@ def resolve_branch_regional_it_cc(
 
 
 def resolve_isp_recipients(
-    branch: Branch,
+    branch: Optional[Branch],
     db: Optional[Session] = None,
 ) -> tuple[list[str], list[str]]:
     """Resolve the active ISP `To` and `CC` email lists for a branch, prioritizing any ISP card
     overrides saved in `NetworkProvider` on Page 10 (`Branches & ISP Directory -> ISPs - 3`)."""
-    isp = (branch.isp_name or "NOOR").upper()
+    isp = (branch.isp_name if branch is not None and branch.isp_name else "NOOR").upper()
     canonical_default = _CANONICAL_ISP_DEFAULTS.get(isp, "noc@noor.net")
-    branch_mail = (branch.isp_contact_mail or "").strip()
+    branch_mail = (branch.isp_contact_mail or "").strip() if branch is not None else ""
 
-    sess = db or object_session(branch)
+    sess = db or (object_session(branch) if branch is not None else None)
     provider: Optional[NetworkProvider] = None
     if sess is not None:
-        if branch.isp_id:
+        if branch is not None and branch.isp_id:
             provider = sess.get(NetworkProvider, branch.isp_id)
         if provider is None:
             provider = sess.execute(
@@ -85,10 +99,14 @@ def resolve_isp_recipients(
 
     if provider is not None:
         prov_mail = (provider.support_email or "").strip()
-        if prov_mail and (not branch_mail or branch_mail == canonical_default):
-            to_addr = prov_mail
+        if (
+            branch_mail
+            and branch_mail.lower() != canonical_default.lower()
+            and prov_mail.lower() == canonical_default.lower()
+        ):
+            to_addr = branch_mail
         else:
-            to_addr = branch_mail or prov_mail or canonical_default
+            to_addr = prov_mail or branch_mail or canonical_default
         cc_list = (
             [c.strip() for c in (provider.cc_emails or []) if c.strip()]
             if provider.cc_emails is not None and len(provider.cc_emails) > 0
@@ -206,6 +224,105 @@ def load_smtp_transport_config(db: Session) -> SmtpTransportConfig:
     return smtp_transport_config_from_row(row)
 
 
+_EWS_CAPABLE_HOSTS: set[str] = set()
+_EWS_VERIFIED_CREDENTIALS: set[tuple[str, str, str]] = set()
+
+
+def _is_loopback_host(host: str) -> bool:
+    return host.strip().lower() in ("127.0.0.1", "localhost", "::1", "")
+
+
+def _verify_ews_connection_sync(
+    cfg: SmtpTransportConfig, timeout_sec: float = 8.0
+) -> Optional[str]:
+    """Verify Exchange Web Services (`https://<host>/EWS/Exchange.asmx`) credentials on port 443.
+
+    On-premises Exchange servers (like `mail.kazyon.com`) reject `ExchangeUsers` mailbox logins
+    on the Port 25 Default Frontend Receive Connector (`535 5.7.3 Authentication unsuccessful`)
+    and when Port 587 is firewalled, EWS over HTTPS (443) provides authenticated mail submission.
+    """
+    if not cfg.credentials_configured or _is_loopback_host(cfg.host):
+        return None
+
+    host_clean = cfg.host.strip()
+    ews_url = f"https://{host_clean}/EWS/Exchange.asmx"
+    soap_get_folder = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"'
+        ' xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"'
+        ' xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+        "<soap:Header><t:RequestServerVersion Version=\"Exchange2013\" /></soap:Header>"
+        "<soap:Body><m:GetFolder>"
+        "<m:FolderShape><t:BaseShape>IdOnly</t:BaseShape></m:FolderShape>"
+        "<m:FolderIds><t:DistinguishedFolderId Id=\"inbox\" /></m:FolderIds>"
+        "</m:GetFolder></soap:Body></soap:Envelope>"
+    )
+    try:
+        with httpx.Client(verify=False, timeout=timeout_sec) as client:
+            resp = client.post(
+                ews_url,
+                content=soap_get_folder.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=utf-8"},
+                auth=(cfg.username, cfg.password),
+            )
+    except Exception:
+        return None
+
+    if resp.status_code == 200 and "<m:ResponseCode>NoError</m:ResponseCode>" in resp.text:
+        _EWS_CAPABLE_HOSTS.add(host_clean.lower())
+        _EWS_VERIFIED_CREDENTIALS.add((host_clean.lower(), cfg.username.strip().lower(), cfg.password))
+        return f"Exchange EWS ({ews_url})"
+
+    if resp.status_code in (401, 403):
+        _EWS_CAPABLE_HOSTS.add(host_clean.lower())
+        raise _SmtpStageError(
+            "auth",
+            smtplib.SMTPAuthenticationError(535, b"5.7.3 Authentication unsuccessful"),
+        )
+
+    return None
+
+
+def _send_via_ews_sync(
+    msg: EmailMessage, cfg: SmtpTransportConfig, timeout_sec: float = 15.0
+) -> bool:
+    """Deliver an RFC 5322 `EmailMessage` via Exchange Web Services (`CreateItem` + `MimeContent`)."""
+    host_clean = cfg.host.strip()
+    ews_url = f"https://{host_clean}/EWS/Exchange.asmx"
+    mime_b64 = base64.b64encode(msg.as_bytes()).decode("ascii")
+    soap_create = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"'
+        ' xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"'
+        ' xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+        "<soap:Header><t:RequestServerVersion Version=\"Exchange2013\" /></soap:Header>"
+        '<soap:Body><m:CreateItem MessageDisposition="SendAndSaveCopy">'
+        "<m:Items><t:Message>"
+        f'<t:MimeContent CharacterSet="UTF-8">{mime_b64}</t:MimeContent>'
+        "</t:Message></m:Items>"
+        "</m:CreateItem></soap:Body></soap:Envelope>"
+    )
+    with httpx.Client(verify=False, timeout=timeout_sec) as client:
+        resp = client.post(
+            ews_url,
+            content=soap_create.encode("utf-8"),
+            headers={"Content-Type": "text/xml; charset=utf-8"},
+            auth=(cfg.username, cfg.password),
+        )
+    if resp.status_code == 200 and "<m:ResponseCode>NoError</m:ResponseCode>" in resp.text:
+        _EWS_CAPABLE_HOSTS.add(host_clean.lower())
+        _EWS_VERIFIED_CREDENTIALS.add((host_clean.lower(), cfg.username.strip().lower(), cfg.password))
+        return True
+    if resp.status_code in (401, 403):
+        raise _SmtpStageError(
+            "auth",
+            smtplib.SMTPAuthenticationError(535, b"5.7.3 Authentication unsuccessful"),
+        )
+    raise EmailDeliveryError(
+        f"Exchange EWS {host_clean} returned HTTP {resp.status_code}: {resp.text[:240]}"
+    )
+
+
 def _open_smtp_session(cfg: SmtpTransportConfig, timeout_sec: float) -> smtplib.SMTP:
     """Connect, greet, secure and (when a login is configured) authenticate.
 
@@ -232,6 +349,18 @@ def _open_smtp_session(cfg: SmtpTransportConfig, timeout_sec: float) -> smtplib.
             except Exception as exc:
                 raise _SmtpStageError("tls", exc) from exc
         if cfg.credentials_configured:
+            auth_ext = server.esmtp_features.get("auth", "").upper()
+            if (
+                cfg.security == "none"
+                and auth_ext
+                and "LOGIN" not in auth_ext
+                and "PLAIN" not in auth_ext
+                and "CRAM-MD5" not in auth_ext
+            ):
+                raise _SmtpStageError(
+                    "auth",
+                    smtplib.SMTPAuthenticationError(535, b"5.7.3 Authentication unsuccessful"),
+                )
             try:
                 server.login(cfg.username, cfg.password)
             except Exception as exc:
@@ -248,7 +377,11 @@ def _open_smtp_session(cfg: SmtpTransportConfig, timeout_sec: float) -> smtplib.
 def test_smtp_connection_sync(
     cfg: SmtpTransportConfig, timeout_sec: float = 10.0
 ) -> dict[str, Any]:
-    """Open a real SMTP session (connect, EHLO, TLS, login, sender accepted) without sending anything."""
+    """Open a real SMTP session (connect, EHLO, TLS, login, sender accepted) without sending anything.
+
+    When an on-premises Exchange server (e.g. `mail.kazyon.com`) rejects user mailbox login on Port 25
+    or blocks Port 587, transparently verifies credentials via Exchange Web Services (HTTPS 443).
+    """
     started = time.perf_counter()
     result: dict[str, Any] = {
         "ok": False,
@@ -264,8 +397,33 @@ def test_smtp_connection_sync(
     if not cfg.host:
         result["error"] = "SMTP host is empty."
     else:
+        host_key = cfg.host.strip().lower()
+        cred_key = (host_key, cfg.username.strip().lower(), cfg.password)
+        use_ews_fast_path = (
+            cfg.credentials_configured
+            and not _is_loopback_host(cfg.host)
+            and (cred_key in _EWS_VERIFIED_CREDENTIALS or host_key in _EWS_CAPABLE_HOSTS)
+        )
         try:
-            server = _open_smtp_session(cfg, timeout_sec)
+            if use_ews_fast_path:
+                ews_banner = _verify_ews_connection_sync(cfg, timeout_sec)
+                if ews_banner:
+                    result.update(
+                        ok=True,
+                        stage="done",
+                        authenticated=True,
+                        server_banner=ews_banner,
+                        error=None,
+                    )
+                    result["latency_ms"] = int((time.perf_counter() - started) * 1000)
+                    return result
+
+            smtp_timeout = (
+                min(timeout_sec, 4.0)
+                if cfg.credentials_configured and not _is_loopback_host(cfg.host)
+                else timeout_sec
+            )
+            server = _open_smtp_session(cfg, smtp_timeout)
             try:
                 banner = server.ehlo_resp or b""
                 result["server_banner"] = (
@@ -289,7 +447,26 @@ def test_smtp_connection_sync(
                     server.close()
             result.update(ok=True, stage="done", authenticated=cfg.credentials_configured)
         except _SmtpStageError as exc:
-            result.update(stage=exc.stage, error=str(exc))
+            ews_banner = None
+            if (
+                cfg.credentials_configured
+                and not _is_loopback_host(cfg.host)
+                and exc.stage in ("connect", "tls", "auth", "sender")
+            ):
+                try:
+                    ews_banner = _verify_ews_connection_sync(cfg, timeout_sec)
+                except _SmtpStageError as ews_exc:
+                    exc = ews_exc
+            if ews_banner:
+                result.update(
+                    ok=True,
+                    stage="done",
+                    authenticated=True,
+                    server_banner=ews_banner,
+                    error=None,
+                )
+            else:
+                result.update(stage=exc.stage, error=str(exc))
     result["latency_ms"] = int((time.perf_counter() - started) * 1000)
     return result
 
@@ -351,16 +528,45 @@ def _send_via_live_smtp_sync(
         msg.set_content(effective_body)
 
         all_rcpts = list(dict.fromkeys([*effective_recipients, *effective_cc]))
-        server = _open_smtp_session(transport, timeout_sec=15.0)
+        host_key = transport.host.strip().lower()
+        cred_key = (host_key, transport.username.strip().lower(), transport.password)
+        if (
+            transport.credentials_configured
+            and not _is_loopback_host(transport.host)
+            and (cred_key in _EWS_VERIFIED_CREDENTIALS or host_key in _EWS_CAPABLE_HOSTS)
+        ):
+            _send_via_ews_sync(msg, transport, timeout_sec=15.0)
+            logger.info("Dispatched live EWS email to=%s subject=%r", all_rcpts, subject)
+            return True
+
         try:
-            server.send_message(msg, from_addr=sender, to_addrs=all_rcpts)
-        finally:
+            smtp_timeout = (
+                4.0
+                if transport.credentials_configured and not _is_loopback_host(transport.host)
+                else 15.0
+            )
+            server = _open_smtp_session(transport, timeout_sec=smtp_timeout)
             try:
-                server.quit()
-            except Exception:
-                server.close()
-        logger.info("Dispatched live SMTP email to=%s subject=%r", all_rcpts, subject)
-        return True
+                server.send_message(msg, from_addr=sender, to_addrs=all_rcpts)
+            finally:
+                try:
+                    server.quit()
+                except Exception:
+                    server.close()
+            logger.info("Dispatched live SMTP email to=%s subject=%r", all_rcpts, subject)
+            return True
+        except Exception as smtp_exc:
+            if transport.credentials_configured and not _is_loopback_host(transport.host):
+                logger.info(
+                    "SMTP %s:%s failed (%s); falling back to Exchange EWS over HTTPS.",
+                    transport.host,
+                    transport.port,
+                    smtp_exc,
+                )
+                _send_via_ews_sync(msg, transport, timeout_sec=15.0)
+                logger.info("Dispatched live EWS email to=%s subject=%r", all_rcpts, subject)
+                return True
+            raise
     except _SmtpStageError as exc:
         raise EmailDeliveryError(
             f"{transport.host}:{transport.port} failed at {exc.stage}: {exc}"

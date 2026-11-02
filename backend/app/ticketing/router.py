@@ -18,11 +18,16 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from app.agent.scheduler import get_email_loop_status, run_email_loop_cycle_once
+from app.agent.scheduler import (
+    get_email_loop_status,
+    get_fleet_scan_status,
+    run_email_loop_cycle_once,
+)
 from app.agent.workflow import (
     ingest_and_triage_eml,
     process_replication_dashboard_report,
     reclassify_existing_email,
+    run_proactive_fleet_scan,
     trigger_email_in_loop,
 )
 from app.auth.dependencies import require_permission
@@ -35,6 +40,8 @@ from app.observability.event_bus import event_bus
 from app.ticketing.schemas import (
     DashboardSummaryResponse,
     EscalationItemDto,
+    FleetScanRunDto,
+    FleetScanTriggerRequest,
     KanbanTicketCardDto,
     ReplicationParseRequest,
     SendTestEmailRequest,
@@ -466,6 +473,35 @@ async def test_vllm_settings_endpoint(
 ) -> VllmConnectionTestResult:
     """Call vLLM `GET /v1/models` and confirm the configured model is served (Page 12)."""
     return await test_vllm_settings(db, payload)
+
+
+@settings_router.get("/fleet-scans")
+async def get_fleet_scans_status_endpoint(
+    limit: int = Query(default=15, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_permission("settings:read")),
+) -> dict[str, Any]:
+    """Return Proactive 3-Hour Fleet Scan scheduler status and recent `FleetScanRun` records."""
+    return get_fleet_scan_status(db, limit=limit)
+
+
+@settings_router.post("/fleet-scans/run-now", response_model=FleetScanRunDto)
+async def run_fleet_scan_now_endpoint(
+    payload: Optional[FleetScanTriggerRequest] = None,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_permission("diagnostics:trigger_manual")),
+) -> FleetScanRunDto:
+    """Trigger an immediate Proactive Fleet Diagnostic Scan (live or dry-run) from Page 12."""
+    req = payload or FleetScanTriggerRequest()
+    res = await run_proactive_fleet_scan(
+        db,
+        triggered_by=actor.username,
+        dry_run=req.dry_run,
+        limit=req.limit,
+        simulate_scenario=req.simulate_scenario,
+    )
+    await event_bus.broadcast("fleet_scan.completed", res)
+    return FleetScanRunDto.model_validate(res)
 
 
 @ws_router.websocket("/ws/tickets")
